@@ -1,7 +1,7 @@
 ## Notes
 
 ```sh
-python3 warpy_parse.py wamc/fizzbuzz.wasm --generate-monkeyc
+python3 wapy_parse.py test/addTwo.wasm --generate-monkeyc
 ```
 
 ## Todo
