@@ -242,12 +242,12 @@ class Module {
     // ... [Other methods like readMagic(), readVersion(), readSections(), dump(), interpret(), etc.]
 
     public function run(fname as String, args as Array<Array<Number>>, printReturn as Boolean) as Number {
-        // // Reset stacks
-        // self.sp = -1;
-        // self.fp = -1;
-        // self.csp = -1;
+        // Reset stacks
+        self.sp = -1;
+        self.fp = -1;
+        self.csp = -1;
 
-        // var fidx = self.exportMap[fname].index;
+        var fidx = self.exportMap[fname].index;
 
         // // Check arg type
         // var tparams = self.function_[fidx].type.params;
@@ -262,15 +262,15 @@ class Module {
         //     self.stack[self.sp] = args[idx];
         // }
 
-        // System.println("Running function '" + fname + "' (0x" + fidx.format("%x") + ")");
+        System.println("Running function '" + fname + "' (0x" + fidx.format("%x") + ")");
         // if (TRACE) {
         //     dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
         // }
-        // var result = doCall(self.stack, self.callstack, self.sp, self.fp, self.csp, self.function_[fidx], 0);
-        // self.rdr.pos = result[0];
-        // self.sp = result[1];
-        // self.fp = result[2];
-        // self.csp = result[3];
+        var result = doCall(self.stack, self.callstack, self.sp, self.fp, self.csp, self.function_[fidx], 0);
+        self.rdr.pos = result[0];
+        self.sp = result[1];
+        self.fp = result[2];
+        self.csp = result[3];
 
         // interpret();
         // if (TRACE) {
