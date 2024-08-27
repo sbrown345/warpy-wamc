@@ -18,3 +18,20 @@ function debug_(str, end) {
         System.println("DEBUG: " + str + end);
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function doCall(stack as StackType, callstack as CallStackType, sp as Number, fp as Number, csp as Number, func, pc as Number, indirect as Boolean) as Number {
+    System.println("do call");
+}

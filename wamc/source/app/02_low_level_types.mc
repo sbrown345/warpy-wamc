@@ -32,12 +32,12 @@ class Type {
     public var results as Array<Number>;
     public var mask as Number;
 
-    function initialize(index as Number, form as Number, params as Array<Number>, results as Array<Number>) {
+    function initialize(index as Number, form as Number, params as Array<Number>, results as Array<Number>, mask as Number) {
         self.index = index;
         self.form = form;
         self.params = params;
         self.results = results;
-        self.mask = 0x80;
+        self.mask = mask; // default was 0x80
     }
 }
 

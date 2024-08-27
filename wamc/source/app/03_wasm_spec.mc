@@ -4,7 +4,7 @@ import Toybox.System;
 const MAGIC as Number = 0x6d736100;
 const VERSION as Number = 0x01;  // MVP
 
-const STACK_SIZE as Number = 65536;
+const STACK_SIZE as Number = 32; //65536;
 const CALLSTACK_SIZE as Number = 8192;
 
 const I32 as Number = 0x7f;      // -0x01

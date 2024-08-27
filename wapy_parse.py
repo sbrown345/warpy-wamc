@@ -2578,63 +2578,96 @@ def generate_monkeyc_classes(module):
     output += f"class {class_name} {{\n"
     output += "    static function createModule() {\n"
     output += "        var module_ = new Module(\n"
-    
-    # Add type information
-    output += "            // Types\n"
-    for i, t in enumerate(module.type):
-        output += f"            new Type({t.index}, {t.form}, [{', '.join(map(str, t.params))}], [{', '.join(map(str, t.results))}], {t.mask}),\n"
-    
-    # Add function information
-    output += "            // Functions\n"
-    for i, f in enumerate(module.function):
+
+    # Add WASM bytecode as bytearray
+    output += "            // WASM bytecode\n"
+    wasm_bytes = ", ".join([f"0x{byte:02x}" for byte in module.data])
+    output += f"            [{wasm_bytes}]b,\n"
+
+    # Add imported function information
+    output += "            // Imported Functions\n"
+    output += "            [\n"
+    for f in module.function:
         if isinstance(f, FunctionImport):
-            output += f"            new FunctionImport(module_.type[{f.type.index}], \"{f.module}\", \"{f.field}\"),\n"
-        else:
-            output += f"            new Function(module_.type[{f.type.index}], {f.index}),\n"
-    
-    # Add table information
-    output += "            // Tables\n"
-    for t, entries in module.table.items():
-        output += f"            new Table({t}, [{', '.join(map(str, entries))}]),\n"
-    
+            output += f"                new FunctionImport({f.type.index}, \"{f.module}\", \"{f.field}\"),\n"
+    output += "            ],\n"
+
     # Add memory information
     output += f"            // Memory\n"
-    output += f"            new Memory({module.memory.pages}),\n"
-    
+    output += f"            new Memory({module.memory.pages}, null),\n"
+
+    # Add type information
+    output += "            // Types\n"
+    output += "            [\n"
+    for t in module.type:
+        output += f"                new Type({t.index}, {t.form}, [{', '.join(map(str, t.params))}], [{', '.join(map(str, t.results))}], {t.mask}),\n"
+    output += "            ],\n"
+
+    # Add regular function information
+    output += "            // Functions\n"
+    output += "            [\n"
+    for f in module.function:
+        if isinstance(f, Function):
+            output += f"                new Function({f.type.index}, {f.index}),\n"
+    output += "            ],\n"
+
+    # Add table information
+    output += "            // Tables\n"
+    if module.table:
+        output += "            {\n"
+        for t, entries in module.table.items():
+            output += f"                {t} => [{', '.join(map(str, entries))}],\n"
+        output += "            },\n"
+    else:
+        output += "            null,\n"
+
     # Add global list
     output += "            // Globals\n"
+    output += "            [\n"
     for g in module.global_list:
-        output += f"            new Global({g[0]}, {g[1]}, {g[2]}),\n"
-    
+        output += f"                [{g[0]}, {g[1]}, {g[2]}],\n"
+    output += "            ],\n"
+
     # Add export information
     output += "            // Exports\n"
+    output += "            [\n"
     for e in module.export_list:
-        output += f"            new Export(\"{e.field}\", {e.kind}, {e.index}),\n"
-    
+        output += f"                new Export(\"{e.field}\", {e.kind}, {e.index}),\n"
+    output += "            ],\n"
+
+    # Add export map as the last parameter
+    output += "            // Export map\n"
+    output += "            {\n"
+    for e in module.export_list:
+        output += f"                \"{e.field}\" => new Export(\"{e.field}\", {e.kind}, {e.index}),\n"
+    output += "            }\n"
+
     # Close the Module constructor
     output += "        );\n"
-    
+
     # Add function bodies
     output += "        // Function bodies\n"
+    function_index = 0
     for i, f in enumerate(module.function):
         if isinstance(f, Function):
-            output += f"        module_.function_[{i}].update([{', '.join(map(str, f.locals))}], {f.start}, {f.end}, {f.else_addr}, {f.br_addr});\n"
-    
+            output += f"        module_.function_[{function_index}].update([{', '.join(map(str, f.locals))}], {f.start}, {f.end}, {f.else_addr}, {f.br_addr});\n"
+            function_index += 1
+
     # Add data sections
     output += "\n        // Data sections\n"
     for i, (offset, data) in enumerate(module.data_sections):
         data_bytes = ", ".join([f"0x{byte:02x}" for byte in data])
         output += f"        module_.memory.write({offset}, [{data_bytes}]b);\n"
-    
+
     # Set start function if exists
     if module.start_function >= 0:
         output += f"        module_.start_function = {module.start_function};\n"
-    
+
     # Close the createModule function and class
     output += "        return module_;\n"
     output += "    }\n"
     output += "}\n"
-    
+
     return output
 
 def entry_point(argv):

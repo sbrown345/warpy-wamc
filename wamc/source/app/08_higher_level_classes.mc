@@ -1,9 +1,12 @@
 import Toybox.Lang;
 import Toybox.System;
 
-typedef importMethodType as Method(module_ as String, field as String) as Array<Number>;
-typedef importFunctionType as Method(module_ as String, field as String, mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>>;
-
+typedef ImportMethodType as Method(module_ as String, field as String) as Array<Number>;
+typedef ImportFunctionType as Method(module_ as String, field as String, mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>>;
+typedef StackType as Array<Array<Number>>;
+typedef CallStackType as Array<Array<Number or Block or Function>>;
+typedef Global as ValueTupleType;
+typedef ValueTupleType as [Number, Number, Float];
 
 class Reader {
     public var bytes as ByteArray;
@@ -144,50 +147,62 @@ class Export {
 
 class Module {
     private var data as ByteArray;
-    // private var rdr as Reader;
-    // private var importValue as importMethodType;
-    // private var importFunction as importFunctionType;
+    private var rdr as Reader;
+    // private var importValue as ImportMethodType;
+    private var importFunction as ImportFunctionType;
 
-    // // Sections
-    // private var type as Array<Type>;
+    // Sections
+    private var type as Array<Type>;
     // private var importList as Array<Import>;
-    private var function_ as Array<Function>;
+    var function_ as Array<Function>;
     // private var fnImportCnt as Number;
-    // private var table as Dictionary<Number, Array<Number>>;
-    // private var exportList as Array<Export>;
-    // private var exportMap as Dictionary<String, Export>;
-    // private var globalList as Array<Array<Number>>;
+    private var table as Dictionary<Number, Array<Number>>;
+    private var exportList as Array<Export>;
+    private var exportMap as Dictionary<String, Export>;
+    private var globalList as Array<Global>;
 
     private var memory as Memory;
 
     // // block/loop/if blocks {start addr: Block, ...}
     // private var blockMap as Dictionary<Number, Block>;
 
-    // // Execution state
-    // private var sp as Number;
-    // private var fp as Number;
-    // private var stack as Array<Array<Number>>;
-    // private var csp as Number;
-    // private var callstack as Array<Array<Number or Block or Function>>;
-    // private var startFunction as Number;
+    // Execution state
+    private var sp as Number;
+    private var fp as Number;
+    private var stack as StackType;
+    private var csp as Number;
+    private var callstack as CallStackType;
+    private var startFunction as Number;
 
     public var start_function as Number = -1;
     
-    public function initialize(data as ByteArray, importValue as importMethodType, importFunction as importFunctionType, memory as Memory or Null) {
+    public function initialize(
+            data as ByteArray, 
+            // importValue as ImportMethodType, 
+            importFunction as ImportFunctionType, 
+            memory as Memory?,
+            types as Array<Type>,
+            // functions as ImportMethodType, 
+            functions as Array<Function>,
+            tables as Dictionary<Number, Array<Number>>,
+            globals as Array<Global>,
+            exports as Array<Export>,
+            exportMap as Dictionary<String, Export>
+            ) {
         self.data = data;
-        // self.rdr = new Reader(data);
+        self.rdr = new Reader(data);
         // self.importValue = importValue;
-        // self.importFunction = importFunction;
+        self.importFunction = importFunction;
 
-        // // Initialize sections
-        // self.type = [];
+        // Initialize sections
+        self.type = types;
         // self.importList = [];
         self.function_ = [];
         // self.fnImportCnt = 0;
-        // self.table = {ANYFUNC => []};
-        // self.exportList = [];
-        // self.exportMap = {};
-        // self.globalList = [];
+        self.table = tables;//{ANYFUNC => []};
+        self.exportList = exports;
+        self.exportMap = exportMap;
+        self.globalList = globals;
 
         if (memory != null) {
             self.memory = memory;
@@ -197,20 +212,20 @@ class Module {
 
         // self.blockMap = {};
 
-        // // Initialize execution state
-        // self.sp = -1;
-        // self.fp = -1;
-        // self.stack = new [STACK_SIZE];
-        // for (var i = 0; i < STACK_SIZE; i++) {
-        //     self.stack[i] = [0x00, 0, 0.0];
-        // }
-        // self.csp = -1;
-        // var block = new Block(0x00, BLOCK_TYPE[I32], 0);
-        // self.callstack = new [CALLSTACK_SIZE];
-        // for (var i = 0; i < CALLSTACK_SIZE; i++) {
-        //     self.callstack[i] = [block, -1, -1, 0];
-        // }
-        // self.startFunction = -1;
+        // Initialize execution state
+        self.sp = -1;
+        self.fp = -1;
+        self.stack = new [STACK_SIZE];
+        for (var i = 0; i < STACK_SIZE; i++) {
+            self.stack[i] = [0x00, 0, 0.0];
+        }
+        self.csp = -1;
+        var block = new Block(0x00, BLOCK_TYPE[I32], 0);
+        self.callstack = new [CALLSTACK_SIZE];
+        for (var i = 0; i < CALLSTACK_SIZE; i++) {
+            self.callstack[i] = [block, -1, -1, 0];
+        }
+        self.startFunction = -1;
 
         // readMagic();
         // readVersion();
@@ -266,7 +281,7 @@ class Module {
         // if (TRACE) {
         //     dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
         // }
-        var result = doCall(self.stack, self.callstack, self.sp, self.fp, self.csp, self.function_[fidx], 0);
+        var result = doCall(self.stack, self.callstack, self.sp, self.fp, self.csp, self.function_[fidx], 0, false);
         self.rdr.pos = result[0];
         self.sp = result[1];
         self.fp = result[2];
