@@ -6,8 +6,6 @@ class NotImplementedException extends Lang.Exception {
         Lang.Exception.initialize();
     }
 }
-
-
 class WAException extends Lang.Exception {
     function initialize(message as String) {
         Lang.Exception.initialize();
@@ -39,6 +37,10 @@ class Type {
         self.results = results;
         self.mask = mask; // default was 0x80
     }
+
+    function toString() as String {
+        return "Type(index: " + self.index + ", form: " + self.form + ", params: " + self.params + ", results: " + self.results + ", mask: " + self.mask + ")";
+    }
 }
 
 class Code {
@@ -69,6 +71,10 @@ class Block extends Code {
         self.end = end;
         self.brAddr = brAddr;
     }
+
+    function toString() as String {
+        return "Block(kind: " + self.kind + ", type: " + self.type + ", start: " + self.start + ", end: " + self.end + ", elseAddr: " + self.elseAddr + ", brAddr: " + self.brAddr + ")";
+    }
 }
 
 class Function extends Code {
@@ -97,6 +103,10 @@ class Function extends Code {
         self.elseAddr = elseAddr;
         self.brAddr = brAddr;
     }
+    
+    function toString() as String {
+        return "Function(type: " + self.type + ", index: " + self.index + ", start: " + self.start + ", end: " + self.end + ", elseAddr: " + self.elseAddr + ", brAddr: " + self.brAddr + ")";
+    }
 }
 
 class FunctionImport extends Code {
@@ -109,5 +119,9 @@ class FunctionImport extends Code {
         self.module_ = module_;
         self.field = field;
         var fname = module_ + "." + field;
+    }
+
+    function toString() as String {
+        return "FunctionImport(type: " + self.type + ", module: '" + self.module_ + "', field: '" + self.field + "')";
     }
 }

@@ -1,0 +1,59 @@
+memory pages: 1
+parsing Type(1), section start: 0x8, payload start: 0xa, length: 0x7 bytes
+  parsed type: <index: 0, form: func, params: ['i32', 'i32'], results: ['i32'], mask: 0x81011>
+parsing Function(3), section start: 0x11, payload start: 0x13, length: 0x2 bytes
+parsing Export(7), section start: 0x15, payload start: 0x17, length: 0xa bytes
+  parsed export: <kind: Function, field: 'addTwo', index: 0x0>
+parsing Code(10), section start: 0x21, payload start: 0x23, length: 0x9 bytes
+  find_blocks idx: 0, start: 0x26, end: 0x2b
+parsing Custom(0), section start: 0x2c, payload start: 0x2e, length: 0x19 bytes
+module bytes: [0,61,73,6d,1,0,0,0,1,7,1,60,2,7f,7f,1,7f,3,2,1,0,7,a,1,6,61,64,64,54,77,6f,0,0,a,9,1,7,0,20,0,20,1,6a,b,0,19,4,6e,61,6d,65,1,9,1,0,6,61,64,64,54,77,6f,2,7,1,0,2,0,0,1,0]
+
+Types:
+  0x0 <index: 0, form: func, params: ['i32', 'i32'], results: ['i32'], mask: 0x81011>
+Imports:
+Functions:
+  0x0 <type: 0x0, locals: [], start: 0x26, end: 0x2b>
+Tables:
+  0x70 -> []
+Memory:
+  0x000 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+  0x010 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+  0x020 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+  0x030 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+  0x040 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+  0x050 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+  0x060 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+  0x070 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+  0x080 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+  0x090 [00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00]
+Global:
+Exports:
+  0x0 <kind: Function, field: 'addTwo', index: 0x0>
+
+block_map: []
+
+Running function 'addTwo' (0x0)
+      * stack:     [0x1:i32 0x2:i32]
+      * callstack: []
+  Calling function 0x0, start: 0x26, end: 0x2b, 0 locals, 2 params, 1 results
+      * stack:     [* 0x1:i32 0x2:i32]
+      * callstack: [fn0<2/0->1>(sp:-1/fp:-1/ra:0x0)]
+    0x26 <0x20/get_local 0x0>
+      - got 0x1:i32
+      * stack:     [* 0x1:i32 0x2:i32 0x1:i32]
+      * callstack: [fn0<2/0->1>(sp:-1/fp:-1/ra:0x0)]
+    0x28 <0x20/get_local 0x1>
+      - got 0x2:i32
+      * stack:     [* 0x1:i32 0x2:i32 0x1:i32 0x2:i32]
+      * callstack: [fn0<2/0->1>(sp:-1/fp:-1/ra:0x0)]
+    0x2a <0x6a/i32.add>
+      - (0x1:i32, 0x2:i32) = 0x3:i32
+      * stack:     [* 0x1:i32 0x2:i32 0x3:i32]
+      * callstack: [fn0<2/0->1>(sp:-1/fp:-1/ra:0x0)]
+    0x2b <0xb/end>
+      - of fn0<2/0->1>
+      * stack:     [0x3:i32]
+      * callstack: []
+addTwo(0x1:i32, 0x2:i32) = 0x3:i32
+0x3:i32

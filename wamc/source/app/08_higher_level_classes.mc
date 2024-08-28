@@ -52,6 +52,10 @@ class Reader {
     public function eof() as Boolean {
         return self.pos >= self.bytes.size();
     }
+
+    public function toString() as String {
+        return "Reader(pos: " + self.pos + ", bytes: " + self.bytes.size() + " bytes)";
+    }
 }
 
 class Memory {
@@ -105,6 +109,10 @@ class Memory {
         self.bytes = self.bytes.slice(0, offset).addAll(data).addAll(self.bytes.slice(endOffset, null));
 
     }
+
+    public function toString() as String {
+        return "Memory(pages: " + self.pages + ", bytes: " + self.bytes.size() + " bytes)";
+    }
 }
 
 class Import {
@@ -131,6 +139,10 @@ class Import {
         self.globalType = globalType; // Global
         self.mutability = mutability; // Global
     }
+
+    public function toString() as String {
+        return "Import(module: '" + self.module_ + "', field: '" + self.field + "', kind: " + self.kind + ")";
+    }
 }
 
 class Export {
@@ -142,6 +154,10 @@ class Export {
         self.field = field;
         self.kind = kind;
         self.index = index;
+    }
+
+    public function toString() as String {
+        return "Export(field: '" + self.field + "', kind: " + self.kind + ", index: " + self.index + ")";
     }
 }
 
@@ -231,7 +247,7 @@ class Module {
         // readVersion();
         // readSections();
 
-        // dump();
+        dump();
 
         // // Run the start function if set
         // if (self.startFunction >= 0) {
@@ -254,7 +270,88 @@ class Module {
         // }
     }
 
-    // ... [Other methods like readMagic(), readVersion(), readSections(), dump(), interpret(), etc.]
+
+    public function dump() as Void {
+        debug("module bytes: " + byteCodeRepr(self.rdr.bytes));
+        info("");
+
+        info("Types:");
+        for (var i = 0; i < self.type.size(); i++) {
+            info("  0x" + i.format("%x") + " " + typeRepr(self.type[i]));
+        }
+
+        // info("Imports:");
+        // for (var i = 0; i < self.import_list.size(); i++) {
+        //     var imp = self.import_list[i];
+        //     if (imp.kind == 0x0) {  // Function
+        //         info("  0x" + i.format("%x") + " [type: " + imp.type + ", '" + imp.module_ + "." + imp.field + "', kind: " + 
+        //               EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + ")]");
+        //     } else if (imp.kind == 0x1 || imp.kind == 0x2) {  // Table & Memory
+        //         info("  0x" + i.format("%x") + " ['" + imp.module_ + "." + imp.field + "', kind: " + 
+        //               EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + "), initial: " + imp.initial + ", maximum: " + imp.maximum + "]");
+        //     } else if (imp.kind == 0x3) {  // Global
+        //         info("  0x" + i.format("%x") + " ['" + imp.module_ + "." + imp.field + "', kind: " + 
+        //               EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + "), type: " + imp.globalType + ", mutability: " + imp.mutability + "]");
+        //     }
+        // }
+
+        info("Functions:");
+        for (var i = 0; i < self.function_.size(); i++) {
+            info("  0x" + i.format("%x") + " " + funcRepr(self.function_[i]));
+        }
+
+        // info("Tables:");
+        // for (var t = 0; t < self.table.size(); t++) {
+        //     var entries = self.table[t];
+        //     var entryStrings = [];
+        //     for (var j = 0; j < entries.size(); j++) {
+        //         entryStrings.add(entries[j].format("%x"));
+        //     }
+        //     info("  0x" + t.format("%x") + " -> [" + entryStrings.join(",") + "]");
+        // }
+
+        // info("Memory:");
+        // if (self.memory.pages > 0) {
+        //     for (var r = 0; r < 10; r++) {
+        //         var hexValues = [];
+        //         for (var j = 0; j < 16; j++) {
+        //             var byteValue = self.memory.bytes[r * 16 + j];
+        //             hexValues.add(hexpad(byteValue, 2));
+        //         }
+        //         info("  0x" + hexpad(r * 16, 3) + " [" + hexValues.join(",") + "]");
+        //     }
+        // }
+
+        // info("Global:");
+        // for (var i = 0; i < self.global_list.size(); i++) {
+        //     info("  0x" + i + " [" + valueRepr(self.global_list[i]) + "]");
+        // }
+
+        // info("Exports:");
+        // for (var i = 0; i < self.export_list.size(); i++) {
+        //     info("  0x" + i.format("%x") + " " + exportRepr(self.export_list[i]));
+        // }
+        // info("");
+
+        // var blockKeys = self.block_map.keys();
+        // blockKeys.sort();
+        // var blockMapStrings = [];
+        // for (var i = 0; i < blockKeys.size(); i++) {
+        //     var k = blockKeys[i];
+        //     var bl = self.block_map[k];
+        //     blockMapStrings.add(blockRepr(bl) + "[0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]");
+        // }
+        // info("block_map: " + blockMapStrings.join(", "));
+        // info("");
+    }
+
+    function hexpad(x as Number, cnt as Number) as String {
+        var s = x.format("%x");
+        return "0".substring(0, cnt - s.length()) + s;
+    }
+
+
+    // ... [Other methods like readMagic(), readVersion(), readSections(), interpret(), etc.]
 
     public function run(fname as String, args as Array<Array<Number>>, printReturn as Boolean) as Number {
         // Reset stacks
@@ -306,6 +403,10 @@ class Module {
         //     System.println(fname + "(" + Lang.format("$1$", [targs.join(", ")]) + ")");
         // }
         // return 0;
+    }
+
+    public function toString() as String {
+        return "Module(types: " + self.type.size() + ", functions: " + self.function_.size() + ", exports: " + self.exportList.size() + ")";
     }
 
     // ... [Helper methods like valueRepr(), dumpStacks(), etc.]

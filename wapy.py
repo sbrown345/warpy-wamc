@@ -3,9 +3,9 @@
 INFO  = False   # informational logging
 TRACE = False   # trace instructions/stacks
 DEBUG = False   # verbose logging
-# INFO  = True    # informational logging
-# TRACE = True    # trace instructions/stacks
-# DEBUG = True    # verbose logging
+INFO  = True    # informational logging
+TRACE = True    # trace instructions/stacks
+DEBUG = True    # verbose logging
 VALIDATE= True
 
 import sys, os, math, time
