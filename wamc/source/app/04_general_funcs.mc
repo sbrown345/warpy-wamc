@@ -31,6 +31,17 @@ function debugWithEnd(str, end) {
     }
 }
 
+function join(arr as Array<String>, sep as String) as String {
+    if (arr.size() == 0) {
+        return "";
+    }
+    var res = arr[0];
+    for (var i = 1; i < arr.size(); i++) {
+        res += sep + arr[i];
+    }
+    return res;
+}
+
 
 // math functions
 
@@ -241,19 +252,25 @@ function debugWithEnd(str, end) {
 //     bytes[pos:pos+8] = uint642bytes(ival)
 
 
-// def value_repr(val):
-//     vt, ival, fval = val
-//     vtn = VALUE_TYPE[vt]
-//     if   vtn in ('i32', 'i64'):
-//         return "%s:%s" % (hex(ival), vtn)
-//     elif vtn in ('f32', 'f64'):
-//         str = "%.7g" % fval
-//         if str.find('.') < 0:
-//             return "%f:%s" % (fval, vtn)
-//         else:
-//             return "%s:%s" % (str, vtn)
-//     else:
-//         raise Exception("unknown value type %s" % vtn)
+function valueRepr(val as Array) as String {
+    var vt = val[0];
+    var ival = val[1];
+    var fval = val[2];
+    var vtn = VALUE_TYPE[vt];
+    
+    if (vtn.equals("i32") || vtn.equals("i64")) {
+        return Lang.format("$1$:$2$", [ival.format("%x"), vtn]);
+    } else if (vtn.equals("f32") || vtn.equals("f64")) {
+        var str = fval.format("%.7f");
+        if (str.find(".") == -1) {
+            return Lang.format("$1$:$2$", [fval.format("%f"), vtn]);
+        } else {
+            return Lang.format("$1$:$2$", [str, vtn]);
+        }
+    } else {
+        throw new WAException("unknown value type " + vtn);
+    }
+}
 
 function typeRepr(t as Type) as String {
     var params = [];
@@ -269,9 +286,9 @@ function typeRepr(t as Type) as String {
            ", mask: 0x" + t.mask.format("%x") + ">";
 }
 
-// def export_repr(e):
-//     return "<kind: %s, field: '%s', index: 0x%x>" % (
-//             EXTERNAL_KIND_NAMES[e.kind], e.field, e.index)
+function exportRepr(e as Export) as String {
+    return "<kind: " + EXTERNAL_KIND_NAMES[e.kind] + ", field: '" + e.field + "', index: 0x" + e.index.format("%x") + ">";
+}
 
 function funcRepr(f as FunctionImport or Function) as String {
     if (f instanceof FunctionImport) {
@@ -287,41 +304,64 @@ function funcRepr(f as FunctionImport or Function) as String {
     }
 }
 
-// def block_repr(block):
-//     if isinstance(block, Block):
-//         return "%s<0/0->%d>" % (
-//                 BLOCK_NAMES[block.kind],
-//                 len(block.type.results))
-//     elif isinstance(block, Function):
-//         return "fn%d<%d/%d->%d>" % (
-//                 block.index, len(block.type.params),
-//                 len(block.locals), len(block.type.results))
+function blockRepr(block as Block or Function) as String {
+    if (block instanceof Block) {
+        return Lang.format("$1$<0/0->$2$>", [
+            BLOCK_NAMES[block.kind],
+            block.type.results.size()
+        ]);
+    } else if (block instanceof Function) {
+        return Lang.format("fn$1$<$2$/$3$->$4$>", [
+            block.index,
+            block.type.params.size(),
+            block.locals.size(),
+            block.type.results.size()
+        ]);
+    } else {
+        return "Unknown block type";
+    }
+}
 
-// def stack_repr(sp, fp, stack):
-//     res = []
-//     for i in range(sp+1):
-//         if i == fp:
-//             res.append("*")
-//         res.append(value_repr(stack[i]))
-//     return "[" + " ".join(res) + "]"
+function stackRepr(sp as Number, fp as Number, stack as Array) as String {
+    var res = [];
+    for (var i = 0; i <= sp; i++) {
+        if (i == fp) {
+            res.add("*");
+        }
+        res.add(valueRepr(stack[i]));
+    }
+    return "[" + join(res, " ") + "]";
+}
 
-// def callstack_repr(csp, bs):
-//     return "[" + " ".join(["%s(sp:%d/fp:%d/ra:0x%x)" % (
-//         block_repr(bs[i][0]),bs[i][1],bs[i][2],bs[i][3])
-//                            for i in range(csp+1)]) + "]"
+function callstackRepr(csp as Number, bs as Array) as String {
+    var callstackEntries = [];
+    for (var i = 0; i <= csp; i++) {
+        var entry = bs[i];
+        var blockReprStr = blockRepr(entry[0]);
+        var spStr = entry[1].toString();
+        var fpStr = entry[2].toString();
+        var raStr = "0x" + entry[3].format("%x");
+        callstackEntries.add(Lang.format("$1$(sp:$2$/fp:$3$/ra:$4$)", [blockReprStr, spStr, fpStr, raStr]));
+    }
+    return "[" + join(callstackEntries, " ") + "]";
+}
 
-// def dump_stacks(sp, stack, fp, csp, callstack):
-//     debug("      * stack:     %s" % (
-//         stack_repr(sp, fp, stack)))
-//     debug("      * callstack: %s" % (
-//         callstack_repr(csp, callstack)))
+function dumpStacks(sp as Number, stack as Array, fp as Number, csp as Number, callstack as Array) as Void {
+    debug("      * stack:     " + stackRepr(sp, fp, stack));
+    debug("      * callstack: " + callstackRepr(csp, callstack));
+}
 
 function byteCodeRepr(bytes as ByteArray) as String {
-    var res = "";
-    for (var i = 0; i < bytes.size(); i++) {
-        res += Lang.format("$1$,", [bytes[i].format("%x")]);
+    var size = bytes.size();
+    if (size == 0) {
+        return "[]";
     }
-    return "[" + res + "]";
+    
+    var result = "[" + bytes[0].format("%x");
+    for (var i = 1; i < size; i++) {
+        result += "," + bytes[i].format("%x");
+    }
+    return result + "]";
 }
 
 // def skip_immediates(code, pos):

@@ -1,7 +1,7 @@
 ## Notes
 
 ```sh
-python3 wapy_parse.py wanc/test/addTwo.wasm --generate-monkeyc
+python3 wapy_parse.py wamc/test/addTwo.wasm --generate-monkeyc
 
 python wapy.py test/addTwo.wasm addTwo 1 2 &> wapy-addTwo,1,2.log
 ```

@@ -18,7 +18,7 @@ class GeneratedWasmModule {
             ],
             // Functions
             [
-                new Function(0, 0),
+                new Function(new Type(0, 96, [127, 127], [127], 528401), 0, [], 38, 43, 0, 43),
             ],
             // Tables
             {
@@ -36,8 +36,6 @@ class GeneratedWasmModule {
                 "addTwo" => new Export("addTwo", 0, 0),
             }
         );
-        // Function bodies
-        module_.function_[0].update([], 38, 43, 0, 43);
 
         // Data sections
         return module_;

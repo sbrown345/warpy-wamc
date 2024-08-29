@@ -86,17 +86,9 @@ class Function extends Code {
     public var elseAddr as Number;
     public var brAddr as Number;
 
-    function initialize(type as Type, index as Number) {
+    function initialize(type as Type, index as Number, locals as Array<Number>, start as Number, end as Number, elseAddr as Number, brAddr as Number) {
         self.type = type; // value_type
         self.index = index;
-        self.locals = [];
-        self.start = 0;
-        self.end = 0;
-        self.elseAddr = 0;
-        self.brAddr = 0;
-    }
-
-    function update(locals as Array<Number>, start as Number, end as Number, elseAddr as Number, brAddr as Number) as Void {
         self.locals = locals;
         self.start = start;
         self.end = end;

@@ -2608,7 +2608,7 @@ def generate_monkeyc_classes(module):
     output += "            [\n"
     for f in module.function:
         if isinstance(f, Function):
-            output += f"                new Function({f.type.index}, {f.index}),\n"
+            output += f"                new Function(new Type({f.type.index}, {f.type.form}, [{', '.join(map(str, f.type.params))}], [{', '.join(map(str, f.type.results))}], {f.type.mask}), {f.index}, [{', '.join(map(str, f.locals))}], {f.start}, {f.end}, {f.else_addr}, {f.br_addr}),\n"
     output += "            ],\n"
 
     # Add table information
@@ -2644,14 +2644,6 @@ def generate_monkeyc_classes(module):
 
     # Close the Module constructor
     output += "        );\n"
-
-    # Add function bodies
-    output += "        // Function bodies\n"
-    function_index = 0
-    for i, f in enumerate(module.function):
-        if isinstance(f, Function):
-            output += f"        module_.function_[{function_index}].update([{', '.join(map(str, f.locals))}], {f.start}, {f.end}, {f.else_addr}, {f.br_addr});\n"
-            function_index += 1
 
     # Add data sections
     output += "\n        // Data sections\n"

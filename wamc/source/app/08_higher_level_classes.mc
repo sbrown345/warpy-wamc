@@ -69,16 +69,16 @@ class Memory {
             self.bytes = initialBytes;
             var remainingSize = (pages * (1 << 16)) - initialBytes.size();
             if (remainingSize > 0) {
-                self.bytes.addAll(new [remainingSize]);
+                self.bytes.addAll(new [remainingSize]b);
             }
         } else {
-            self.bytes = new [pages * (1 << 16)];
+            self.bytes = new [pages * (1 << 16)]b;
         }
     }
 
     public function grow(pages as Number) as Void {
         self.pages += pages.toNumber();
-        var additionalBytes = new [pages.toNumber() * (1 << 16)];
+        var additionalBytes = new [pages.toNumber() * (1 << 16)]b;
         self.bytes.addAll(additionalBytes);
     }
 
@@ -169,7 +169,7 @@ class Module {
 
     // Sections
     private var type as Array<Type>;
-    // private var importList as Array<Import>;
+    private var importList as Array<Import>;
     var function_ as Array<Function>;
     // private var fnImportCnt as Number;
     private var table as Dictionary<Number, Array<Number>>;
@@ -180,7 +180,7 @@ class Module {
     private var memory as Memory;
 
     // // block/loop/if blocks {start addr: Block, ...}
-    // private var blockMap as Dictionary<Number, Block>;
+    private var blockMap as Dictionary<Number, Block>;
 
     // Execution state
     private var sp as Number;
@@ -212,8 +212,8 @@ class Module {
 
         // Initialize sections
         self.type = types;
-        // self.importList = [];
-        self.function_ = [];
+        self.importList = [];
+        self.function_ = functions;
         // self.fnImportCnt = 0;
         self.table = tables;//{ANYFUNC => []};
         self.exportList = exports;
@@ -226,7 +226,7 @@ class Module {
             self.memory = new Memory(1);  // default to 1 page
         }
 
-        // self.blockMap = {};
+        self.blockMap = {};
 
         // Initialize execution state
         self.sp = -1;
@@ -270,7 +270,6 @@ class Module {
         // }
     }
 
-
     public function dump() as Void {
         debug("module bytes: " + byteCodeRepr(self.rdr.bytes));
         info("");
@@ -280,78 +279,96 @@ class Module {
             info("  0x" + i.format("%x") + " " + typeRepr(self.type[i]));
         }
 
-        // info("Imports:");
-        // for (var i = 0; i < self.import_list.size(); i++) {
-        //     var imp = self.import_list[i];
-        //     if (imp.kind == 0x0) {  // Function
-        //         info("  0x" + i.format("%x") + " [type: " + imp.type + ", '" + imp.module_ + "." + imp.field + "', kind: " + 
-        //               EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + ")]");
-        //     } else if (imp.kind == 0x1 || imp.kind == 0x2) {  // Table & Memory
-        //         info("  0x" + i.format("%x") + " ['" + imp.module_ + "." + imp.field + "', kind: " + 
-        //               EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + "), initial: " + imp.initial + ", maximum: " + imp.maximum + "]");
-        //     } else if (imp.kind == 0x3) {  // Global
-        //         info("  0x" + i.format("%x") + " ['" + imp.module_ + "." + imp.field + "', kind: " + 
-        //               EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + "), type: " + imp.globalType + ", mutability: " + imp.mutability + "]");
-        //     }
-        // }
+        info("Imports:");
+        for (var i = 0; i < self.importList.size(); i++) {
+            var imp = self.importList[i];
+            if (imp.kind == 0x0) {  // Function
+                info("  0x" + i.format("%x") + " [type: " + imp.type + ", '" + imp.module_ + "." + imp.field + "', kind: " + 
+                      EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + ")]");
+            } else if (imp.kind == 0x1 || imp.kind == 0x2) {  // Table & Memory
+                info("  0x" + i.format("%x") + " ['" + imp.module_ + "." + imp.field + "', kind: " + 
+                      EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + "), initial: " + imp.initial + ", maximum: " + imp.maximum + "]");
+            } else if (imp.kind == 0x3) {  // Global
+                info("  0x" + i.format("%x") + " ['" + imp.module_ + "." + imp.field + "', kind: " + 
+                      EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + "), type: " + imp.globalType + ", mutability: " + imp.mutability + "]");
+            }
+        }
 
         info("Functions:");
         for (var i = 0; i < self.function_.size(); i++) {
             info("  0x" + i.format("%x") + " " + funcRepr(self.function_[i]));
         }
+        info("Tables:");
+        if (self.table != null && self.table.size() > 0) {
+            var keys = self.table.keys();
+            for (var i = 0; i < keys.size(); i++) {
+                var key = keys[i];
+                var entries = self.table[key];
+                var entryStrings = [];
+                for (var j = 0; j < entries.size(); j++) {
+                    entryStrings.add(entries[j].format("%x"));
+                }
+                info("  0x" + key.format("%x") + " -> [" + join(entryStrings, ",") + "]");
+            }
+        } else {
+            info("  No tables defined");
+        }
 
-        // info("Tables:");
-        // for (var t = 0; t < self.table.size(); t++) {
-        //     var entries = self.table[t];
-        //     var entryStrings = [];
-        //     for (var j = 0; j < entries.size(); j++) {
-        //         entryStrings.add(entries[j].format("%x"));
-        //     }
-        //     info("  0x" + t.format("%x") + " -> [" + entryStrings.join(",") + "]");
-        // }
+        info("Memory:");
+        if (self.memory.pages > 0) {
+            for (var r = 0; r < 10; r++) {
+                var hexValues = [];
+                for (var j = 0; j < 16; j++) {
+                    var byteValue = self.memory.bytes[r * 16 + j];
+                    hexValues.add(hexpad(byteValue, 2));
+                }
+                info("  0x" + hexpad(r * 16, 3) + " [" + join(hexValues, ",") + "]");
+            }
+        }
 
-        // info("Memory:");
-        // if (self.memory.pages > 0) {
-        //     for (var r = 0; r < 10; r++) {
-        //         var hexValues = [];
-        //         for (var j = 0; j < 16; j++) {
-        //             var byteValue = self.memory.bytes[r * 16 + j];
-        //             hexValues.add(hexpad(byteValue, 2));
-        //         }
-        //         info("  0x" + hexpad(r * 16, 3) + " [" + hexValues.join(",") + "]");
-        //     }
-        // }
+        info("Global:");
+        for (var i = 0; i < self.globalList.size(); i++) {
+            info("  0x" + i + " [" + valueRepr(self.globalList[i]) + "]");
+        }
 
-        // info("Global:");
-        // for (var i = 0; i < self.global_list.size(); i++) {
-        //     info("  0x" + i + " [" + valueRepr(self.global_list[i]) + "]");
-        // }
+        info("Exports:");
+        for (var i = 0; i < self.exportList.size(); i++) {
+            info("  0x" + i.format("%x") + " " + exportRepr(self.exportList[i]));
+        }
+        info("");
 
-        // info("Exports:");
-        // for (var i = 0; i < self.export_list.size(); i++) {
-        //     info("  0x" + i.format("%x") + " " + exportRepr(self.export_list[i]));
-        // }
-        // info("");
-
-        // var blockKeys = self.block_map.keys();
-        // blockKeys.sort();
-        // var blockMapStrings = [];
-        // for (var i = 0; i < blockKeys.size(); i++) {
-        //     var k = blockKeys[i];
-        //     var bl = self.block_map[k];
-        //     blockMapStrings.add(blockRepr(bl) + "[0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]");
-        // }
-        // info("block_map: " + blockMapStrings.join(", "));
-        // info("");
+        var blockKeys = self.blockMap.keys();
+        blockKeys.sort(null);
+        var blockMapStrings = [];
+        for (var i = 0; i < blockKeys.size(); i++) {
+            var k = blockKeys[i];
+            var bl = self.blockMap[k];
+            blockMapStrings.add(blockRepr(bl) + "[0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]");
+        }
+        info("block_map: [" + join(blockMapStrings, ", ") + "]");
+        info("");
     }
 
     function hexpad(x as Number, cnt as Number) as String {
-        var s = x.format("%x");
-        return "0".substring(0, cnt - s.length()) + s;
+        return x.format("%0" + cnt + "x");
     }
 
 
     // ... [Other methods like readMagic(), readVersion(), readSections(), interpret(), etc.]
+    public function interpret() as Void {
+        var result = interpret_mvp(self,
+            // Greens
+            self.rdr.pos, self.rdr.bytes, self.function_,
+            self.table, self.blockMap,
+            // Reds
+            self.memory, self.sp, self.stack, self.fp, self.csp,
+            self.callstack);
+        
+        self.rdr.pos = result[0];
+        self.sp = result[1];
+        self.fp = result[2];
+        self.csp = result[3];
+    }
 
     public function run(fname as String, args as Array<Array<Number>>, printReturn as Boolean) as Number {
         // Reset stacks
@@ -361,46 +378,46 @@ class Module {
 
         var fidx = self.exportMap[fname].index;
 
-        // // Check arg type
-        // var tparams = self.function_[fidx].type.params;
-        // if (tparams.size() != args.size()) {
-        //     throw new Lang.Exception("arg count mismatch " + tparams.size() + " != " + args.size());
-        // }
-        // for (var idx = 0; idx < args.size(); idx++) {
-        //     if (tparams[idx] != args[idx][0]) {
-        //         throw new Lang.Exception("arg type mismatch " + tparams[idx] + " != " + args[idx][0]);
-        //     }
-        //     self.sp++;
-        //     self.stack[self.sp] = args[idx];
-        // }
+        // Check arg type
+        var tparams = self.function_[fidx].type.params;
+        if (tparams.size() != args.size()) {
+            throw new WAException("arg count mismatch " + tparams.size() + " != " + args.size());
+        }
+        for (var idx = 0; idx < args.size(); idx++) {
+            if (tparams[idx] != args[idx][0]) {
+                throw new WAException("arg type mismatch " + tparams[idx] + " != " + args[idx][0]);
+            }
+            self.sp++;
+            self.stack[self.sp] = args[idx];
+        }
 
         System.println("Running function '" + fname + "' (0x" + fidx.format("%x") + ")");
-        // if (TRACE) {
-        //     dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
-        // }
+        if (TRACE) {
+            dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+        }
         var result = doCall(self.stack, self.callstack, self.sp, self.fp, self.csp, self.function_[fidx], 0, false);
         self.rdr.pos = result[0];
         self.sp = result[1];
         self.fp = result[2];
         self.csp = result[3];
 
-        // interpret();
-        // if (TRACE) {
-        //     dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
-        // }
-
+        interpret();
+        if (TRACE) {
+            dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+        }
+        throw new NotImplementedException("!");
         // var targs = args.map(function(a) {
         //     return valueRepr(a);
         // });
         // if (self.sp >= 0) {
         //     var ret = self.stack[self.sp];
         //     self.sp--;
-        //     System.println(fname + "(" + Lang.format("$1$", [targs.join(", ")]) + ") = " + valueRepr(ret));
+        //     System.println(fname + "(" + Lang.format("$1$", [join(targs, ", ")]) + ") = " + valueRepr(ret));
         //     if (printReturn) {
         //         System.println(valueRepr(ret));
         //     }
         // } else {
-        //     System.println(fname + "(" + Lang.format("$1$", [targs.join(", ")]) + ")");
+        //     System.println(fname + "(" + Lang.format("$1$", [join(targs, ", ")]) + ")");
         // }
         // return 0;
     }
