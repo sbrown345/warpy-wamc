@@ -5,9 +5,12 @@ import Toybox.System;
 // General Functions
 // ######################################
 
-function assert(condition as Boolean) as Void {
+function assert(condition as Boolean, message as String) as Void {
     if (!condition) {
-        throw new WAException("Assertion failed");
+        if (message == null) {
+            message = "Assertion failed";
+        }
+        throw new WAException(message);
     }
 }
 
@@ -29,7 +32,7 @@ function infoWithEnd(str, end) {
 
 function debug(str) {
     if (DEBUG) {
-        System.println("DEBUG: " + str);
+        System.println(str);
     }
 }
 
@@ -38,7 +41,7 @@ function debugWithEnd(str, end) {
         if (end == null) {
             end = "\n";
         }
-        System.println("DEBUG: " + str + end);
+        System.println(str + end);
     }
 }
 
@@ -290,24 +293,24 @@ function read_LEB(bytes, pos, maxbits/*=32*/, signed/*=false*/) as [Number, Numb
 }
 
 function read_I32(bytes, pos) {
-    assert(pos >= 0);
+    assert(pos >= 0, null);
     return bytes.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
 }
 
 function read_I64(bytes, pos) {
-    assert(pos >= 0);
+    assert(pos >= 0, null);
     return bytes2uint64(bytes.slice(pos, pos + 8));
 }
 
 function read_F32(bytes, pos) {
-    assert(pos >= 0);
+    assert(pos >= 0, null);
     var num = bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => pos });
     if (isNaN(num)) {return num; }
     return fround(num, 5);
 }
 
 function read_F64(bytes, pos) {
-    assert(pos >= 0);
+    assert(pos >= 0, null);
     return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => pos });
 }
 
@@ -331,14 +334,14 @@ function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
 }
 
 
-function valueRepr(val as Array) as String {
+function value_repr(val as Array) as String {
     var vt = val[0];
     var ival = val[1];
     var fval = val[2];
     var vtn = VALUE_TYPE[vt];
     
     if (vtn.equals("i32") || vtn.equals("i64")) {
-        return Lang.format("$1$:$2$", [ival.format("%x"), vtn]);
+        return Lang.format("0x$1$:$2$", [ival.format("%x"), vtn]);
     } else if (vtn.equals("f32") || vtn.equals("f64")) {
         var str = fval.format("%.7f");
         if (str.find(".") == -1) {
@@ -351,7 +354,7 @@ function valueRepr(val as Array) as String {
     }
 }
 
-function typeRepr(t as Type) as String {
+function type_repr(t as Type) as String {
     var params = [];
     for (var i = 0; i < t.params.size(); i++) {
         params.add("'" + VALUE_TYPE[t.params[i]] + "'");
@@ -365,7 +368,7 @@ function typeRepr(t as Type) as String {
            ", mask: 0x" + t.mask.format("%x") + ">";
 }
 
-function exportRepr(e as Export) as String {
+function export_repr(e as Export) as String {
     return "<kind: " + EXTERNAL_KIND_NAMES[e.kind] + ", field: '" + e.field + "', index: 0x" + e.index.format("%x") + ">";
 }
 
@@ -407,7 +410,7 @@ function stackRepr(sp as Number, fp as Number, stack as Array) as String {
         if (i == fp) {
             res.add("*");
         }
-        res.add(valueRepr(stack[i]));
+        res.add(value_repr(stack[i]));
     }
     return "[" + join(res, " ") + "]";
 }
@@ -565,7 +568,7 @@ function popBlock(stack as StackType, callstack as CallStackType, sp as Number, 
         var save = stack[sp];
         sp -= 1;
         if (save[0] != t.results[0]) {
-            throw new WAException("call signature mismatch: " + VALUE_TYPE[t.results[0]] + " != " + VALUE_TYPE[save[0]] + " (" + valueRepr(save) + ")");
+            throw new WAException("call signature mismatch: " + VALUE_TYPE[t.results[0]] + " != " + VALUE_TYPE[save[0]] + " (" + value_repr(save) + ")");
         }
 
         // Restore value stack to original size prior to call/block
@@ -703,7 +706,7 @@ function interpretMvp(module_,
             }
             info("    0x" + curPc.format("%x") + " <0x" + opcode.format("%x") + "/" + OPERATOR_INFO[opcode][0] +
                  (immediates.size() > 0 ? " " : "") +
-                 join(immediateParts, ","));
+                 join(immediateParts, ",") + ">");
         }
 
         // Control flow operators
@@ -744,7 +747,7 @@ function interpretMvp(module_,
                 }
             }
             if (TRACE) {
-                debug("      - cond: " + valueRepr(cond) + " jump to 0x" + pc.format("%x") + ", block: " + blockRepr(block));
+                debug("      - cond: " + value_repr(cond) + " jump to 0x" + pc.format("%x") + ", block: " + blockRepr(block));
             }
         } else if (opcode == 0x05) {  // else
             var block = callstack[csp][0];
@@ -892,7 +895,7 @@ function interpretMvp(module_,
 
         // Parametric operators
         else if (opcode == 0x1a) {  // drop
-            if (TRACE) { debug("      - dropping: " + valueRepr(stack[sp])); }
+            if (TRACE) { debug("      - dropping: " + value_repr(stack[sp])); }
             sp -= 1;
         } else if (opcode == 0x1b) {  // select
             var cond = stack[sp];
@@ -905,7 +908,7 @@ function interpretMvp(module_,
                 stack[sp] = a;
             }
             if (TRACE) {
-                debug("      - cond: 0x" + cond[1].format("%x") + ", selected: " + valueRepr(stack[sp]));
+                debug("      - cond: 0x" + cond[1].format("%x") + ", selected: " + value_repr(stack[sp]));
             }
         }
 
@@ -915,33 +918,33 @@ function interpretMvp(module_,
             pc = arg[0];
             sp += 1;
             stack[sp] = stack[fp+arg[1]];
-            if (TRACE) { debug("      - got " + valueRepr(stack[sp])); }
+            if (TRACE) { debug("      - got " + value_repr(stack[sp])); }
         } else if (opcode == 0x21) {  // set_local
             var arg = read_LEB(code, pc,  32, null);
             pc = arg[0];
             var val = stack[sp];
             sp -= 1;
             stack[fp+arg[1]] = val;
-            if (TRACE) { debug("      - to " + valueRepr(val)); }
+            if (TRACE) { debug("      - to " + value_repr(val)); }
         } else if (opcode == 0x22) {  // tee_local
             var arg = read_LEB(code, pc,  32, null);
             pc = arg[0];
             var val = stack[sp]; // like set_local but do not pop
             stack[fp+arg[1]] = val;
-            if (TRACE) { debug("      - to " + valueRepr(val)); }
+            if (TRACE) { debug("      - to " + value_repr(val)); }
         } else if (opcode == 0x23) {  // get_global
             var gidx = read_LEB(code, pc,  32, null);
             pc = gidx[0];
             sp += 1;
             stack[sp] = module_.globalList[gidx[1]];
-            if (TRACE) { debug("      - got " + valueRepr(stack[sp])); }
+            if (TRACE) { debug("      - got " + value_repr(stack[sp])); }
         } else if (opcode == 0x24) {  // set_global
             var gidx = read_LEB(code, pc,  32, null);
             pc = gidx[0];
             var val = stack[sp];
             sp -= 1;
             module_.globalList[gidx[1]] = val;
-            if (TRACE) { debug("      - to " + valueRepr(val)); }
+            if (TRACE) { debug("      - to " + value_repr(val)); }
         }
 
         // Memory-related operators
@@ -1342,63 +1345,70 @@ function interpretMvp(module_,
 //             sp += 1
 //             stack[sp] = res
 
-//         # i32 binary
-//         elif 0x6a <= opcode <= 0x78:
-//             a, b = stack[sp-1], stack[sp]
-//             sp -= 2
-//             if VALIDATE: assert a[0] == I32 and b[0] == I32
-//             if   0x6a == opcode: # i32.add
-//                 res = (I32, int2int32(a[1] + b[1]), 0.0)
-//             elif 0x6b == opcode: # i32.sub
-//                 res = (I32, a[1] - b[1], 0.0)
-//             elif 0x6c == opcode: # i32.mul
-//                 res = (I32, int2int32(a[1] * b[1]), 0.0)
-//             elif 0x6d == opcode: # i32.div_s
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 elif a[1] == 0x80000000 and b[1] == -1:
-//                     raise WAException("integer overflow")
-//                 else:
-//                     res = (I32, idiv_s(int2int32(a[1]), int2int32(b[1])), 0.0)
-//             elif 0x6e == opcode: # i32.div_u
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 else:
-//                     res = (I32, int2uint32(a[1]) / int2uint32(b[1]), 0.0)
-//             elif 0x6f == opcode: # i32.rem_s
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 else:
-//                     res = (I32, irem_s(int2int32(a[1]), int2int32(b[1])), 0.0)
-//             elif 0x70 == opcode: # i32.rem_u
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 else:
-//                     res = (I32, int2uint32(a[1]) % int2uint32(b[1]), 0.0)
-//             elif 0x71 == opcode: # i32.and
-//                 res = (I32, a[1] & b[1], 0.0)
-//             elif 0x72 == opcode: # i32.or
-//                 res = (I32, a[1] | b[1], 0.0)
-//             elif 0x73 == opcode: # i32.xor
-//                 res = (I32, a[1] ^ b[1], 0.0)
-//             elif 0x74 == opcode: # i32.shl
-//                 res = (I32, a[1] << (b[1] % 0x20), 0.0)
-//             elif 0x75 == opcode: # i32.shr_s
-//                 res = (I32, int2int32(a[1]) >> (b[1] % 0x20), 0.0)
-//             elif 0x76 == opcode: # i32.shr_u
-//                 res = (I32, int2uint32(a[1]) >> (b[1] % 0x20), 0.0)
-//             elif 0x77 == opcode: # i32.rotl
-//                 res = (I32, rotl32(a[1], b[1]), 0.0)
-//             elif 0x78 == opcode: # i32.rotr
-//                 res = (I32, rotr32(a[1], b[1]), 0.0)
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s, %s) = %s" % (
-//                     value_repr(a), value_repr(b), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
+        // i32 binary
+        else if (0x6a <= opcode && opcode <= 0x78) {
+            var a = stack[sp-1];
+            var b = stack[sp];
+            sp -= 2;
+            if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, "Expected I32"); }
+            var res = [I32, 0, 0.0];
+            if (opcode == 0x6a) { // i32.add
+                res[1] = int2int32(a[1] + b[1]);
+            } else if (opcode == 0x6b) { // i32.sub
+                res[1] = a[1] - b[1];
+            } else if (opcode == 0x6c) { // i32.mul
+                res[1] = int2int32(a[1] * b[1]);
+            } else if (opcode == 0x6d) { // i32.div_s
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else if (a[1] == 0x80000000 && b[1] == -1) {
+                    throw new WAException("integer overflow");
+                } else {
+                    res[1] = idiv_s(int2int32(a[1]), int2int32(b[1]));
+                }
+            } else if (opcode == 0x6e) { // i32.div_u
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    res[1] = int2uint32(a[1]) / int2uint32(b[1]);
+                }
+            } else if (opcode == 0x6f) { // i32.rem_s
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    res[1] = irem_s(int2int32(a[1]), int2int32(b[1]));
+                }
+            } else if (opcode == 0x70) { // i32.rem_u
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    res[1] = int2uint32(a[1]) % int2uint32(b[1]);
+                }
+            } else if (opcode == 0x71) { // i32.and
+                res[1] = a[1] & b[1];
+            } else if (opcode == 0x72) { // i32.or
+                res[1] = a[1] | b[1];
+            } else if (opcode == 0x73) { // i32.xor
+                res[1] = a[1] ^ b[1];
+            } else if (opcode == 0x74) { // i32.shl
+                res[1] = a[1] << (b[1] % 0x20);
+            } else if (opcode == 0x75) { // i32.shr_s
+                res[1] = int2int32(a[1]) >> (b[1] % 0x20);
+            } else if (opcode == 0x76) { // i32.shr_u
+                res[1] = int2uint32(a[1]) >> (b[1] % 0x20);
+            } else if (opcode == 0x77) { // i32.rotl
+                res[1] = rotl32(a[1], b[1]);
+            } else if (opcode == 0x78) { // i32.rotr
+                res[1] = rotr32(a[1], b[1]);
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
 
 //         # i64 binary
 //         elif 0x7c <= opcode <= 0x8a:

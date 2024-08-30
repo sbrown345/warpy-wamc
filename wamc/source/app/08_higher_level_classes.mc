@@ -183,9 +183,9 @@ class Module {
     private var blockMap as Dictionary<Number, Block>;
 
     // Execution state
-    private var sp as Number;
+     var sp as Number;
     private var fp as Number;
-    private var stack as StackType;
+    var stack as StackType;
     private var csp as Number;
     private var callstack as CallStackType;
     private var startFunction as Number;
@@ -276,7 +276,7 @@ class Module {
 
         info("Types:");
         for (var i = 0; i < self.type.size(); i++) {
-            info("  0x" + i.format("%x") + " " + typeRepr(self.type[i]));
+            info("  0x" + i.format("%x") + " " + type_repr(self.type[i]));
         }
 
         info("Imports:");
@@ -328,12 +328,12 @@ class Module {
 
         info("Global:");
         for (var i = 0; i < self.globalList.size(); i++) {
-            info("  0x" + i + " [" + valueRepr(self.globalList[i]) + "]");
+            info("  0x" + i + " [" + value_repr(self.globalList[i]) + "]");
         }
 
         info("Exports:");
         for (var i = 0; i < self.exportList.size(); i++) {
-            info("  0x" + i.format("%x") + " " + exportRepr(self.exportList[i]));
+            info("  0x" + i.format("%x") + " " + export_repr(self.exportList[i]));
         }
         info("");
 
@@ -368,7 +368,7 @@ class Module {
         self.csp = result[3];
     }
 
-    public function run(fname as String, args as Array<Array<Number>>, printReturn as Boolean) as Number {
+    public function run(fname as String, args as Array<Array<Number>>, printReturn as Boolean, returnValue as Boolean) as Number | ValueTupleType {
         // Reset stacks
         self.sp = -1;
         self.fp = -1;
@@ -403,26 +403,29 @@ class Module {
         if (TRACE) {
             dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
         }
-        throw new NotImplementedException();
-        // var targs = args.map(function(a) {
-        //     return valueRepr(a);
-        // });
-        // if (self.sp >= 0) {
-        //     var ret = self.stack[self.sp];
-        //     self.sp--;
-        //     System.println(fname + "(" + Lang.format("$1$", [join(targs, ", ")]) + ") = " + valueRepr(ret));
-        //     if (printReturn) {
-        //         System.println(valueRepr(ret));
-        //     }
-        // } else {
-        //     System.println(fname + "(" + Lang.format("$1$", [join(targs, ", ")]) + ")");
-        // }
-        // return 0;
+        var targs = [];
+        for (var i = 0; i < args.size(); i++) {
+            targs.add(value_repr(args[i]));
+        }
+        if (self.sp >= 0) {
+            var ret = self.stack[self.sp];
+            self.sp--;
+            System.println(fname + "(" + Lang.format("$1$", [join(targs, ", ")]) + ") = " + value_repr(ret));
+            if (printReturn) {
+                System.println(value_repr(ret));
+            }
+            if (returnValue) {
+                return ret;
+            }
+        } else {
+            System.println(fname + "(" + Lang.format("$1$", [join(targs, ", ")]) + ")");
+        }
+        return 0;
     }
 
     public function toString() as String {
         return "Module(types: " + self.type.size() + ", functions: " + self.function_.size() + ", exports: " + self.exportList.size() + ")";
     }
 
-    // ... [Helper methods like valueRepr(), dumpStacks(), etc.]
+    // ... [Helper methods like value_repr(), dumpStacks(), etc.]
 }
