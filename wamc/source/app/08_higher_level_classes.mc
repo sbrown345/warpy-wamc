@@ -1,8 +1,8 @@
 import Toybox.Lang;
 import Toybox.System;
 
-typedef ImportMethodType as Method(module_ as String, field as String) as Array<Number>;
-typedef ImportFunctionType as Method(module_ as String, field as String, mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>>;
+typedef ImportMethodType as Method(module_ as Module, field as String) as Array<Number>;
+typedef ImportFunctionType as Method(module_ as Module, field as String, mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>>;
 typedef StackType as Array<Array<Number>>;
 typedef CallStackType as Array<Array<Number or Block or Function>>;
 typedef Global as ValueTupleType;
@@ -42,9 +42,9 @@ class Reader {
         // return bytes;
     }
 
-    public function readLEB(maxbits as Number, signed as Boolean) as Number {
+    public function read_LEB(maxbits as Number, signed as Boolean) as Number {
         throw new NotImplementedException();
-        // var result = $.readLEB(self.bytes, self.pos, maxbits, signed);
+        // var result = $.read_LEB(self.bytes, self.pos, maxbits, signed);
         // self.pos = result[0];
         // return result[1];
     }
@@ -403,7 +403,7 @@ class Module {
         if (TRACE) {
             dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
         }
-        throw new NotImplementedException("!");
+        throw new NotImplementedException();
         // var targs = args.map(function(a) {
         //     return valueRepr(a);
         // });
