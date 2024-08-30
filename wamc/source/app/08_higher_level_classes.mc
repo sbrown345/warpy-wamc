@@ -353,10 +353,8 @@ class Module {
         return x.format("%0" + cnt + "x");
     }
 
-
-    // ... [Other methods like readMagic(), readVersion(), readSections(), interpret(), etc.]
     public function interpret() as Void {
-        var result = interpret_mvp(self,
+        var result = interpretMvp(self,
             // Greens
             self.rdr.pos, self.rdr.bytes, self.function_,
             self.table, self.blockMap,

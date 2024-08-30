@@ -501,5 +501,37 @@ function byteCodeRepr(bytes as ByteArray) as String {
 
 
 function doCall(stack as StackType, callstack as CallStackType, sp as Number, fp as Number, csp as Number, func, pc as Number, indirect as Boolean) as Number {
-    System.println("do call");
+    throw new NotImplementedException("doCall");
+}
+
+
+
+// doCallImport
+
+
+// Main loop/JIT
+
+
+function getLocationStr(opcode as Number, pc as Number, code as Array<Number>, function_ as Array, table as Dictionary, blockMap as Dictionary) as String {
+    return "0x" + pc.format("%x") + " " + OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ")";
+}
+
+function getBlock(blockMap as Dictionary, pc as Number) as Block {
+    return blockMap[pc];
+}
+
+function getFunction(function_ as Array, fidx as Number) as Function {
+    return function_[fidx];
+}
+
+function boundViolation(opcode as Number, addr as Number, pages as Number) as Boolean {
+    return addr < 0 || addr + LOAD_SIZE[opcode] > pages * (1 << 16);
+}
+
+function getFromTable(table as Dictionary, tidx as Number, tableIndex as Number) as Number {
+    var tbl = table[tidx] as Array<Number>;
+    if (tableIndex < 0 || tableIndex >= tbl.size()) {
+        throw new WAException("undefined element");
+    }
+    return tbl[tableIndex];
 }
