@@ -7,7 +7,7 @@ class wamcApp extends Application.AppBase {
 
     function initialize() {
         AppBase.initialize();
-        waModule = GeneratedWasmModule.createModule();
+        waModule = Wamc_test_addTwo.createModule();
     }
 
     // onStart() is called on application start up

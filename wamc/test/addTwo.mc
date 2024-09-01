@@ -2,7 +2,7 @@ import Toybox.Lang;
 import Toybox.System;
 import Toybox.Test;
 
-class GeneratedWasmModule {
+class Wamc_test_addTwo {
     static function createModule() {
         var module_ = new Module(
             // WASM bytecode

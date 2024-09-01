@@ -1,17 +1,23 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-from __future__ import print_function
-import os, sys, re
-import argparse, time
-import signal, atexit, tempfile, subprocess
+import os
+import sys
+import re
+import argparse
+import time
+import signal
+import atexit
+import tempfile
+import subprocess
 
 from subprocess import Popen, STDOUT, PIPE
 from select import select
 
 # Pseudo-TTY and terminal manipulation
-import pty, array, fcntl, termios
-
-IS_PY_3 = sys.version_info[0] == 3
+import pty
+import array
+import fcntl
+import termios
 
 debug_file = None
 log_file = None
@@ -39,7 +45,6 @@ rundir = None
 
 class Runner():
     def __init__(self, args, no_pty=False):
-        #print "args: %s" % repr(args)
         self.no_pty = no_pty
 
         # Cleanup child process on exit
@@ -70,25 +75,19 @@ class Runner():
                            stdin=slave, stdout=slave, stderr=STDOUT,
                            preexec_fn=os.setsid,
                            env=env)
-            # Now close slave so that we will get an exception from
-            # read when the child exits early
-            # http://stackoverflow.com/questions/11165521
             os.close(slave)
             self.stdin = os.fdopen(master, 'r+b', 0)
             self.stdout = self.stdin
 
-        #print "started"
         self.buf = ""
         self.last_prompt = ""
 
     def read_to_prompt(self, prompts, timeout):
         end_time = time.time() + timeout
         while time.time() < end_time:
-            [outs,_,_] = select([self.stdout], [], [], 1)
+            [outs, _, _] = select([self.stdout], [], [], 1)
             if self.stdout in outs:
-                new_data = self.stdout.read(1)
-                new_data = new_data.decode("utf-8") if IS_PY_3 else new_data
-                #print("new_data: '%s'" % new_data)
+                new_data = self.stdout.read(1).decode("utf-8")
                 debug(new_data)
                 if self.no_pty:
                     self.buf += new_data.replace("\n", "\r\n")
@@ -107,13 +106,9 @@ class Runner():
         return None
 
     def writeline(self, str):
-        def _to_bytes(s):
-            return bytes(s, "utf-8") if IS_PY_3 else s
-
-        self.stdin.write(_to_bytes(str + "\n"))
+        self.stdin.write(bytes(str + "\n", "utf-8"))
 
     def cleanup(self):
-        #print "cleaning up"
         if self.p:
             try:
                 os.killpg(self.p.pid, signal.SIGTERM)
@@ -122,24 +117,28 @@ class Runner():
             self.p = None
 
 def assert_prompt(runner, prompts, timeout):
-    # Wait for the initial prompt
     header = runner.read_to_prompt(prompts, timeout=timeout)
-    if not header == None:
+    if header is not None:
         if header:
             log("Started with:\n%s" % header)
     else:
         log("Did not one of following prompt(s): %s" % repr(prompts))
-        log("    Got      : %s" % repr(r.buf))
+        log("    Got      : %s" % repr(runner.buf))
         sys.exit(1)
-
 
 ### WebAssembly specific
 
 parser = argparse.ArgumentParser(
         description="Run a test file against a WebAssembly interpreter")
-parser.add_argument('--wast2wasm', type=str,
-        default=os.environ.get("WAST2WASM", "wast2wasm"),
-        help="Path to wast2wasm program")
+parser.add_argument('--wat2wasm', type=str,
+        default=os.environ.get("WAT2WASM", "wat2wasm"),
+        help="Path to wat2wasm program")
+parser.add_argument('--wast2json', type=str,
+        default=os.environ.get("WAST2JSON", "wast2json"),
+        help="Path to wast2json program")
+parser.add_argument('--parser', type=str,
+        default=os.environ.get("WAMC_PARSER", "./wapy_parse.py"),
+        help="Path to wapy_parse.py")
 parser.add_argument('--interpreter', type=str,
         default=os.environ.get("WA_CMD", "./wac"),
         help="Path to WebAssembly interpreter")
@@ -166,7 +165,6 @@ parser.add_argument('--skip-list', action='append', default=[],
 parser.add_argument('test_file', type=argparse.FileType('r'),
         help="a WebAssembly *.wast test file")
 
-
 def read_forms(string):
     forms = []
     form = ""
@@ -174,48 +172,41 @@ def read_forms(string):
     line = 0
     pos = 0
     while pos < len(string):
-        # Keep track of line number
         if string[pos] == '\n': line += 1
 
-        # Ignore whitespace between top-level forms
         if string[pos] in (' ', '\n', '\t'):
             if depth != 0:
                 form += string[pos]
             pos += 1
             continue
 
-        #print("here0 line: %d, forms: %s" % (line, repr(forms)))
         # Add top-level comments
         if string[pos:pos+2] == ";;":
-            print
             end = string.find("\n", pos)
-            if end == -1: end == len(string)
-            #form += string[pos:end]
-            #forms.append(string[pos:end])
+            if end == -1: end = len(string)
+            # Uncomment the following lines if needed
+            # form += string[pos:end]
+            # forms.append(string[pos:end])
             pos = end
             continue
 
-        # TODO: handle nested multi-line comments
         if string[pos:pos+2] == "(;":
-            # Skip multi-line comment
             end = string.find(";)", pos)
             if end == -1:
                 raise Exception("mismatch multiline comment on line %d: '%s'" % (
                     line, string[pos:pos+80]))
-            pos = end+2
+            pos = end + 2
             continue
 
-        # handle strings
         if string[pos] == '"':
-            end = string.find('"', pos+1)
-            # TODO: fix when backslash itself may be quoted
-            while string[end-1] == '\\':
-                end = string.find('"', end+1)
+            end = string.find('"', pos + 1)
+            while string[end - 1] == '\\':
+                end = string.find('"', end + 1)
             if end == -1:
                 raise Exception("unterminated string line %d: '%s'" % (
                     line, string[pos:pos+80]))
-            form += string[pos:end+1]
-            pos = end+1
+            form += string[pos:end + 1]
+            pos = end + 1
             continue
 
         # Read a top-level form
@@ -232,7 +223,7 @@ def read_forms(string):
     return forms
 
 def parse_const(val):
-    if   val == '':
+    if val == '':
         return (None, '')
     type = val[0:3]
     if type in ["i32", "i64"]:
@@ -244,7 +235,6 @@ def parse_const(val):
                     "%s:%s" % (hex(int(val[10:])), type))
     elif type in ["f32", "f64"]:
         if val.find("nan:") >= 0:
-            # TODO: how to handle this correctly
             return (float.fromhex(val[10:].split(':')[1]),
                     "%s:%s" % (val[10:].split(':')[0], type))
         elif val[10:12] == "0x" or val[10:13] == "-0x":
@@ -276,9 +266,8 @@ def int2int64(i):
     else:
         return val
 
-
 def num_repr(i):
-    if isinstance(i, int) or isinstance(i, long):
+    if isinstance(i, int):
         return re.sub("L$", "", hex(i))
     else:
         return "%.16g" % i
@@ -297,7 +286,6 @@ def hexpad64(i):
 
 def invoke(r, args, cmd):
     r.writeline(cmd.strip())
-
     return r.read_to_prompt(['\r\nwebassembly> ', '\nwebassembly> '],
             timeout=args.test_timeout)
 
@@ -308,7 +296,7 @@ def test_assert(r, opts, mode, cmd, expected):
     outs = [''] + out.split('\n')[1:]
     out = outs[-1]
 
-    if mode=='trap':
+    if mode == 'trap':
         o = re.sub('^Exception: ', '', out)
         e = re.sub('^Exception: ', '', expected)
         if o.find(e) >= 0 or e.find(o) >= 0:
@@ -320,7 +308,7 @@ def test_assert(r, opts, mode, cmd, expected):
         if m0.group(1) == "-0":
             expects.add("0:f32")
         expects.add('%f:f32' % float(m0.group(1)))
-        expects.add('%f:f32' % round(float(m0.group(1)),5))
+        expects.add('%f:f32' % round(float(m0.group(1)), 5))
     if expected == "-nan:f32":
         expects.add("nan:f32")
     if expected == "nan:f32":
@@ -330,11 +318,9 @@ def test_assert(r, opts, mode, cmd, expected):
     if expected == "nan:f64":
         expects.add("-nan:f64")
 
-    # munge the output some
     out = re.sub("L:i32$", ':i32', out)
     out = re.sub("L:i64$", ':i64', out)
     results = set([out])
-    # create alternate representations
     m1 = re.search("^(-?[0-9a-fx]+):i32$", out)
     m2 = re.search("^(-?[0-9a-fx]+):i64$", out)
     m3 = re.search("^(-?[0-9\.e-]+):f32$", out)
@@ -343,17 +329,17 @@ def test_assert(r, opts, mode, cmd, expected):
     m6 = re.search("^(-?0x[0-9a-fp+\.]+):f64$", out)
     if m1:
         val = int(m1.group(1), 16)
-        results.add(num_repr(int2int32(val))+":i32")
-        results.add(num_repr(int2uint32(val))+":i32")
-        results.add(hexpad16(int2uint32(val))+":i32")
-        results.add(hexpad24(int2uint32(val))+":i32")
-        results.add(hexpad32(int2uint32(val))+":i32")
+        results.add(num_repr(int2int32(val)) + ":i32")
+        results.add(num_repr(int2uint32(val)) + ":i32")
+        results.add(hexpad16(int2uint32(val)) + ":i32")
+        results.add(hexpad24(int2uint32(val)) + ":i32")
+        results.add(hexpad32(int2uint32(val)) + ":i32")
     elif m2:
         val = int(m2.group(1), 16)
-        results.add(num_repr(int2int64(val))+":i64")
-        results.add(num_repr(int2uint64(val))+":i64")
-        results.add(hexpad32(int2uint64(val))+":i64")
-        results.add(hexpad64(int2uint64(val))+":i64")
+        results.add(num_repr(int2int64(val)) + ":i64")
+        results.add(num_repr(int2uint64(val)) + ":i64")
+        results.add(hexpad32(int2uint64(val)) + ":i64")
+        results.add(hexpad64(int2uint64(val)) + ":i64")
     elif m3:
         val = float(m3.group(1))
         if re.search("^.*\.0+$", m3.group(1)):
@@ -449,9 +435,9 @@ def skip_test(form, skip_list):
         if re.search(s, form):
             return True
     return False
+
 def is_ascii(s):
     return all(ord(c) > 8 and ord(c) < 128 for c in s)
-
 
 def cleanup_tempfiles(opts, files):
     for f in files:
@@ -483,10 +469,10 @@ if __name__ == "__main__":
 
     forms = read_forms(opts.test_file.read())
     r = None
-    wast_tempfile = wasm_tempfile = None
+    wat_tempfile = wasm_tempfile = None
 
     for form in forms:
-        if  ";;" == form[0:2]:
+        if ";;" == form[0:2]:
             log(form)
         elif re.match("^\(assert_trap\s+\(module", form):
             log("ignoring assert_trap around module")
@@ -504,20 +490,32 @@ if __name__ == "__main__":
             log("ignoring invoke $FOO")
 
         elif re.match("^\(module\\b.*", form):
-            cleanup_tempfiles(opts, [wast_tempfile, wasm_tempfile])
-            (t1fd, wast_tempfile) = tempfile.mkstemp(suffix=".wast")
+            cleanup_tempfiles(opts, [wat_tempfile, wasm_tempfile])
+            (t1fd, wat_tempfile) = tempfile.mkstemp(suffix=".wat")
             (t2fd, wasm_tempfile) = tempfile.mkstemp(suffix=".wasm")
             os.close(t1fd)
             os.close(t2fd)
 
-            log("Writing WAST module to '%s'" % wast_tempfile)
-            file(wast_tempfile, 'w').write(form)
+            log("Writing WAT module to '%s'" % wat_tempfile)
+            with open(wat_tempfile, 'w') as f:
+                f.write(form)
             log("Compiling WASM to '%s'" % wasm_tempfile)
-            cmd = [ opts.wast2wasm,
-                    "--no-check",
-                    wast_tempfile,
+            cmd = [opts.wat2wasm,
+                   "--no-check",
+                   wat_tempfile,
+                   "-o",
+                   wasm_tempfile]
+            log("Running: %s" % " ".join(cmd))
+            subprocess.check_call(cmd)
+
+            log("Compiling WASM to '%s'" % wasm_tempfile)
+            cmd = [
+                    "python",
+                    opts.parser,
+                    wasm_tempfile,
+                    "--generate-monkeyc",
                     "-o",
-                    wasm_tempfile ]
+                    os.path.basename(wasm_tempfile).replace('.wasm', '.mc')]
             log("Running: %s" % " ".join(cmd))
             subprocess.check_call(cmd)
 
@@ -553,4 +551,4 @@ if __name__ == "__main__":
             pass
         else:
             raise Exception("unrecognized form '%s...'" % form[0:40])
-    cleanup_tempfiles(opts, [wast_tempfile, wasm_tempfile])
+    cleanup_tempfiles(opts, [wat_tempfile, wasm_tempfile])

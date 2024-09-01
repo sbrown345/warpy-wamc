@@ -8,7 +8,7 @@ DEBUG = False   # verbose logging
 # DEBUG = True    # verbose logging
 VALIDATE= True
 
-import sys, os, math, time
+import sys, os, math, time, re
 
 sys.path.append(os.path.abspath('./pypy2-v5.6.0-src'))
 
@@ -2569,8 +2569,18 @@ def usage(argv):
 # Entry points
 ######################################
 
-def generate_monkeyc_classes(module):
-    class_name = "GeneratedWasmModule"
+def sanitize_class_name(name):
+    # Remove file extension
+    name = name.split('.')[0]
+    # Replace non-alphanumeric characters with underscores
+    name = re.sub(r'\W+', '_', name)
+    # Ensure the name starts with a letter
+    if not name[0].isalpha():
+        name = 'Wasm_' + name
+    # Capitalize the first letter
+    return name[0].upper() + name[1:]
+
+def generate_monkeyc_classes(module, class_name):
     output = "import Toybox.Lang;\n"
     output += "import Toybox.System;\n"
     output += "import Toybox.Test;\n"
@@ -2662,6 +2672,19 @@ def generate_monkeyc_classes(module):
 
     return output
 
+def generate_monkeyc(wasm_file_path, class_name=None):
+    with open(wasm_file_path, 'rb') as file:
+        wasm = file.read()
+
+    mem = Memory(1)  # Default memory pages
+
+    m = Module(wasm, import_value, import_function, mem)
+    class_name = class_name or sanitize_class_name(wasm_file_path)
+
+    monkeyc_code = generate_monkeyc_classes(m, class_name)
+
+    return monkeyc_code
+
 def entry_point(argv):
     try:
         # Argument handling
@@ -2673,6 +2696,7 @@ def entry_point(argv):
         run_args = []
         generate_monkeyc = False
         input_file = ""
+        output_file = None  # Initialize output_file
         idx = 1
         while idx < len(argv):
             arg = argv[idx]
@@ -2689,6 +2713,9 @@ def entry_point(argv):
                 memory_pages = 256
             elif arg == "--memory-pages":
                 memory_pages = int(argv[idx])
+                idx += 1
+            elif arg == "-o":  # Handle output file parameter
+                output_file = argv[idx]
                 idx += 1
             elif arg == "--":
                 continue
@@ -2718,68 +2745,72 @@ def entry_point(argv):
                 write_I32(mem.bytes, i*4, string_next) # zero terminated
                 string_next += slen
 
-            # Set memoryBase to next 64-bit aligned address
+            # Set memoryBase to next 64-bit aligned address 
             string_next += (8 - (string_next % 8))
             IMPORT_VALUES['env.memoryBase'] = (I32, string_next, 0.0)
 
 
         m = Module(wasm, import_value, import_function, mem)
+        class_name = sanitize_class_name(input_file)
 
         if generate_monkeyc:
-            monkeyc_code = generate_monkeyc_classes(m)
+            monkeyc_code = generate_monkeyc_classes(m, class_name)
             
             # Generate output filename
-            output_file = os.path.splitext(input_file)[0] + ".mc"
+            if output_file is None:  # Use default if not specified
+                output_file = os.path.splitext(input_file)[0] + ".mc"
             
             # Write the generated code to the output file
             with open(output_file, 'w') as file:
                 file.write(monkeyc_code)
+            
+            print(f"MonkeyC code generated and saved to {output_file}")
 
-        if argv_mode:
-            fname = "_main"
-            fidx = m.export_map[fname].index
-            arg_count = len(m.function[fidx].type.params)
-            if arg_count == 2:
-                run_args = [(I32, len(args), 0.0), (I32, 0, 0.0)]
-            elif arg_count == 0:
-                run_args = []
-            else:
-                raise Exception("_main has %s args, should have 0 or 2" %
-                        arg_count)
-        else:
-            # Convert args to expected numeric type. This must be
-            # after the module is initialized so that we know what
-            # types the arguments are
-            fname, run_args = parse_command(m, args)
+        # if argv_mode:
+        #     fname = "_main"
+        #     fidx = m.export_map[fname].index
+        #     arg_count = len(m.function[fidx].type.params)
+        #     if arg_count == 2:
+        #         run_args = [(I32, len(args), 0.0), (I32, 0, 0.0)]
+        #     elif arg_count == 0:
+        #         run_args = []
+        #     else:
+        #         raise Exception("_main has %s args, should have 0 or 2" %
+        #                 arg_count)
+        # else:
+        #     # Convert args to expected numeric type. This must be
+        #     # after the module is initialized so that we know what
+        #     # types the arguments are
+        #     fname, run_args = parse_command(m, args)
 
-        if '__post_instantiate' in m.export_map:
-            m.run('__post_instantiate', [])
+        # if '__post_instantiate' in m.export_map:
+        #     m.run('__post_instantiate', [])
 
-        if not repl:
+        # if not repl:
 
-            # Invoke one function and exit
-            try:
-                return m.run(fname, run_args, not argv_mode)
-            except WAException as e:
-                os.write(2, "".join(traceback.format_exception(*sys.exc_info())))
-                os.write(2, "%s\n" % e.message)
-                return 1
-        else:
-            # Simple REPL
-            while True:
-                try:
-                    line = readline("webassembly> ")
-                    if line == "": continue
+        #     # Invoke one function and exit
+        #     try:
+        #         return m.run(fname, run_args, not argv_mode)
+        #     except WAException as e:
+        #         os.write(2, "".join(traceback.format_exception(*sys.exc_info())))
+        #         os.write(2, "%s\n" % e.message)
+        #         return 1
+        # else:
+        #     # Simple REPL
+        #     while True:
+        #         try:
+        #             line = readline("webassembly> ")
+        #             if line == "": continue
 
-                    fname, run_args = parse_command(m, line.split(' '))
-                    res = m.run(fname, run_args, True)
-                    if not res == 0:
-                        return res
+        #             fname, run_args = parse_command(m, line.split(' '))
+        #             res = m.run(fname, run_args, True)
+        #             if not res == 0:
+        #                 return res
 
-                except WAException as e:
-                    os.write(2, "Exception: %s\n" % e.message)
-                except EOFError as e:
-                    break
+        #         except WAException as e:
+        #             os.write(2, "Exception: %s\n" % e.message)
+        #         except EOFError as e:
+        #             break
 
     except WAException as e:
         sys.stderr.write("".join(traceback.format_exception(*sys.exc_info())))

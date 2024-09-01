@@ -6,7 +6,7 @@ typedef ImportFunctionType as Method(module_ as Module, field as String, mem as 
 typedef StackType as Array<Array<Number>>;
 typedef CallStackType as Array<Array<Number or Block or Function>>;
 typedef Global as ValueTupleType;
-typedef ValueTupleType as [Number, Number, Float];
+typedef ValueTupleType as [Types, Number, Float];
 
 // var INFO  = false; // informational logging
 // var TRACE = false; // trace instructions/stacks
@@ -46,8 +46,36 @@ function float_fromhex(s) {
     throw new NotImplementedException();
 }
 
+function compareValueType(a as ValueTupleType, b as ValueTupleType) as Boolean {
+    System.println("compareValueType: " + a + ", " + b);
+    return a[0] == b[0] and a[1] == b[1] and a[2] == b[2];
+}
 
+function assertEqual(expected as ValueTupleType, actual as ValueTupleType) as Boolean {
+    if (compareValueType(expected, actual)) {
+        return true;
+    } else {
+        System.println("Assertion failed: expected " + expected + ", but got " + actual);
+        return false;
+    }
+}
 
+function assertTrap(expected as ValueTupleType, actual as ValueTupleType) as Boolean {
+    throw new NotImplementedException();
+    // if (!(result instanceof Trap)) {
+    //     return false;
+    // }
+    // if (!result.toString().equals(expectedAssertMessage)) {
+    //     System.println("Wrong trap message: " + result + ", expected: " + expectedAssertMessage);
+    //     return false;
+    // }
+    
+    return true;
+}
+function i32(x) { return [I32, x.toNumber(), 0.0]; }
+function i64(x) { return [I64, x.toLong, 0.0]; }
+function f32(x) { return [F32, 0, x.toFloat()]; }
+function f64(x) { return [F64, 0, x.toDouble()]; }
 
 // ######################################
 // # Basic low-level types/classes
@@ -180,10 +208,12 @@ const VERSION as Number = 0x01;  // MVP
 const STACK_SIZE as Number = 32; //65536;
 const CALLSTACK_SIZE as Number = 8192;
 
-const I32 as Number = 0x7f;      // -0x01
-const I64 as Number = 0x7e;      // -0x02
-const F32 as Number = 0x7d;      // -0x03
-const F64 as Number = 0x7c;      // -0x04
+enum Types {
+    I32     = 0x7f,  // -0x01
+    I64     = 0x7e,  // -0x02
+    F32     = 0x7d,  // -0x03
+    F64     = 0x7c   // -0x04
+}
 const ANYFUNC as Number = 0x70;  // -0x10
 const FUNC as Number = 0x60;     // -0x20
 const BLOCK as Number = 0x40;    // -0x40
@@ -2600,7 +2630,13 @@ class Module {
         self.csp = result[3];
     }
 
-    public function run(fname as String, args as Array<Array<Number>>, printReturn as Boolean, returnValue as Boolean) as Number | ValueTupleType {
+    public function run(fname as String, args as Array<Array<Number>>) as Number | ValueTupleType {
+        var printReturn = false;
+        var returnValue = true;
+        return self.runWithArgs(fname, args, printReturn, returnValue);
+    }
+
+    public function runWithArgs(fname as String, args as Array<Array<Number>>, printReturn as Boolean, returnValue as Boolean) as Number | ValueTupleType {
         // Reset stacks
         self.sp = -1;
         self.fp = -1;

@@ -1,0 +1,13 @@
+{"source_filename": "./wamc/test/wast/i32_test.wast",
+ "commands": [
+  {"type": "module", "line": 3, "filename": "i32_test.0.wasm"}, 
+  {"type": "assert_return", "line": 35, "action": {"type": "invoke", "field": "add", "args": [{"type": "i32", "value": "1"}, {"type": "i32", "value": "1"}]}, "expected": [{"type": "i32", "value": "2"}]}, 
+  {"type": "assert_return", "line": 36, "action": {"type": "invoke", "field": "add", "args": [{"type": "i32", "value": "1"}, {"type": "i32", "value": "0"}]}, "expected": [{"type": "i32", "value": "1"}]}, 
+  {"type": "assert_return", "line": 37, "action": {"type": "invoke", "field": "add", "args": [{"type": "i32", "value": "4294967295"}, {"type": "i32", "value": "4294967295"}]}, "expected": [{"type": "i32", "value": "4294967294"}]}, 
+  {"type": "assert_return", "line": 38, "action": {"type": "invoke", "field": "add", "args": [{"type": "i32", "value": "4294967295"}, {"type": "i32", "value": "1"}]}, "expected": [{"type": "i32", "value": "0"}]}, 
+  {"type": "assert_return", "line": 44, "action": {"type": "invoke", "field": "sub", "args": [{"type": "i32", "value": "1"}, {"type": "i32", "value": "1"}]}, "expected": [{"type": "i32", "value": "0"}]}, 
+  {"type": "assert_return", "line": 45, "action": {"type": "invoke", "field": "sub", "args": [{"type": "i32", "value": "1"}, {"type": "i32", "value": "0"}]}, "expected": [{"type": "i32", "value": "1"}]}, 
+  {"type": "assert_return", "line": 46, "action": {"type": "invoke", "field": "sub", "args": [{"type": "i32", "value": "4294967295"}, {"type": "i32", "value": "4294967295"}]}, "expected": [{"type": "i32", "value": "0"}]}, 
+  {"type": "assert_return", "line": 52, "action": {"type": "invoke", "field": "mul", "args": [{"type": "i32", "value": "1"}, {"type": "i32", "value": "1"}]}, "expected": [{"type": "i32", "value": "1"}]}, 
+  {"type": "assert_return", "line": 53, "action": {"type": "invoke", "field": "mul", "args": [{"type": "i32", "value": "1"}, {"type": "i32", "value": "0"}]}, "expected": [{"type": "i32", "value": "0"}]}, 
+  {"type": "assert_return", "line": 54, "action": {"type": "invoke", "field": "mul", "args": [{"type": "i32", "value": "4294967295"}, {"type": "i32", "value": "4294967295"}]}, "expected": [{"type": "i32", "value": "1"}]}]}
