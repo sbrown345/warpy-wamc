@@ -1,9 +1,503 @@
 import Toybox.Lang;
 import Toybox.System;
 
+typedef ImportMethodType as Method(module_ as Module, field as String) as Array<Number>;
+typedef ImportFunctionType as Method(module_ as Module, field as String, mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>>;
+typedef StackType as Array<Array<Number>>;
+typedef CallStackType as Array<Array<Number or Block or Function>>;
+typedef Global as ValueTupleType;
+typedef ValueTupleType as [Number, Number, Float];
+
+// var INFO  = false; // informational logging
+// var TRACE = false; // trace instructions/stacks
+// var DEBUG = false; // verbose logging
+var INFO  = true;
+var TRACE = true;
+var DEBUG = true;
+var VALIDATE = true;
+
+
+function do_sort(a as Array) as Array {
+    return a.sort(null);
+}
+
+// def unpack_f32(i32):
+//     return struct.unpack('f', struct.pack('i', i32))[0]
+// def unpack_f64(i64):
+//     return struct.unpack('d', struct.pack('q', i64))[0]
+// def pack_f32(f32):
+//     return struct.unpack('i', struct.pack('f', f32))[0]
+// def pack_f64(f64):
+//     return struct.unpack('q', struct.pack('d', f64))[0]
+
+function intmask(i) {return i;}
+
+function string_to_int(s as String, base as Number) as Number {
+    return s.toNumberWithBase(base);
+}
+
+function fround(val, digits) {
+    var multiplier = Math.pow(10, digits);
+    return Math.round(val * multiplier) / multiplier;
+}
+
+function float_fromhex(s) {
+    System.println("float_fromhex: " + s);
+    throw new NotImplementedException();
+}
+
+
+
+
 // ######################################
+// # Basic low-level types/classes
+// ######################################
+
+class NotImplementedException extends Lang.Exception {
+    function initialize() {
+        Lang.Exception.initialize();
+    }
+}
+class WAException extends Lang.Exception {
+    function initialize(message as String) {
+        Lang.Exception.initialize();
+        self.mMessage = message;
+    }
+}
+
+class ExitException extends Lang.Exception {
+    public var code as Number;
+
+    function initialize(code as Number) {
+        Lang.Exception.initialize();
+        self.code = code;
+        self.mMessage = "Exit Exception Code:" + code;
+    }
+}
+
+
+
+class Type {
+    public var index as Number;
+    public var form as Number;
+    public var params as Array<Number>;
+    public var results as Array<Number>;
+    public var mask as Number;
+
+    function initialize(index as Number, form as Number, params as Array<Number>, results as Array<Number>, mask as Number) {
+        self.index = index;
+        self.form = form;
+        self.params = params;
+        self.results = results;
+        self.mask = mask; // default was 0x80
+    }
+
+    function toString() as String {
+        return "Type(index: " + self.index + ", form: " + self.form + ", params: " + self.params + ", results: " + self.results + ", mask: " + self.mask + ")";
+    }
+}
+
+class Code {
+}
+
+class Block extends Code {
+    public var kind as Number;
+    public var type as Number;
+    public var locals as Array<Number>;
+    public var start as Number;
+    public var end as Number;
+    public var elseAddr as Number;
+    public var brAddr as Number;
+
+    function initialize(kind as Number, type as Number, start as Number) {
+        self.kind = kind; // block opcode (0x00 for init_expr)
+        self.type = type; // value_type
+        self.locals = [];
+        self.start = start;
+        self.end = 0;
+        self.elseAddr = 0;
+        self.brAddr = 0;
+    }
+
+    function update(end as Number, brAddr as Number) as Void {
+        self.end = end;
+        self.brAddr = brAddr;
+    }
+
+    function toString() as String {
+        return "Block(kind: " + self.kind + ", type: " + self.type + ", start: " + self.start + ", end: " + self.end + ", elseAddr: " + self.elseAddr + ", brAddr: " + self.brAddr + ")";
+    }
+}
+
+class Function extends Code {
+    public var type as Type;
+    public var index as Number;
+    public var locals as Array<Number>;
+    public var start as Number;
+    public var end as Number;
+    public var elseAddr as Number;
+    public var brAddr as Number;
+
+    function initialize(type as Type, index as Number, locals as Array<Number>, start as Number, end as Number, elseAddr as Number, brAddr as Number) {
+        self.type = type; // value_type
+        self.index = index;
+        self.locals = locals;
+        self.start = start;
+        self.end = end;
+        self.elseAddr = elseAddr;
+        self.brAddr = brAddr;
+    }
+    
+    function toString() as String {
+        return "Function(type: " + self.type + ", index: " + self.index + ", start: " + self.start + ", end: " + self.end + ", elseAddr: " + self.elseAddr + ", brAddr: " + self.brAddr + ")";
+    }
+}
+
+class FunctionImport extends Code {
+    public var type as Type;
+    public var module_ as String;
+    public var field as String;
+
+    function initialize(type as Type, module_ as String, field as String) {
+        self.type = type;  // value_type
+        self.module_ = module_;
+        self.field = field;
+    }
+
+    function toString() as String {
+        return "FunctionImport(type: " + self.type + ", module: '" + self.module_ + "', field: '" + self.field + "')";
+    }
+}
+
+
+// ####################################
+// WebAssembly spec data
+// ####################################
+
+const MAGIC as Number = 0x6d736100;
+const VERSION as Number = 0x01;  // MVP
+
+const STACK_SIZE as Number = 32; //65536;
+const CALLSTACK_SIZE as Number = 8192;
+
+const I32 as Number = 0x7f;      // -0x01
+const I64 as Number = 0x7e;      // -0x02
+const F32 as Number = 0x7d;      // -0x03
+const F64 as Number = 0x7c;      // -0x04
+const ANYFUNC as Number = 0x70;  // -0x10
+const FUNC as Number = 0x60;     // -0x20
+const BLOCK as Number = 0x40;    // -0x40
+
+var VALUE_TYPE as Dictionary<Number, String> = {
+    I32 => "i32",
+    I64 => "i64",
+    F32 => "f32",
+    F64 => "f64",
+    ANYFUNC => "anyfunc",
+    FUNC => "func",
+    BLOCK => "block_type"
+};
+
+var BLOCK_TYPE as Dictionary = {
+    I32 => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => [I32]},
+    I64 => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => [I64]},
+    F32 => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => [F32]},
+    F64 => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => [F64]},
+    BLOCK => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => []}
+};
+
+var BLOCK_NAMES as Dictionary<Number, String> = {
+    0x00 => "fn",
+    0x02 => "block",
+    0x03 => "loop",
+    0x04 => "if",
+    0x05 => "else"
+};
+
+var EXTERNAL_KIND_NAMES as Dictionary<Number, String> = {
+    0x0 => "Function",
+    0x1 => "Table",
+    0x2 => "Memory",
+    0x3 => "Global"
+};
+
+var SECTION_NAMES as Dictionary<Number, String> = {
+    0 => "Custom",
+    1 => "Type",
+    2 => "Import",
+    3 => "Function",
+    4 => "Table",
+    5 => "Memory",
+    6 => "Global",
+    7 => "Export",
+    8 => "Start",
+    9 => "Element",
+    10 => "Code",
+    11 => "Data"
+};
+
+var OPERATOR_INFO as Dictionary = {
+    // Control flow operators
+    0x00 => ["unreachable", ""],
+    0x01 => ["nop", ""],
+    0x02 => ["block", "block_type"],
+    0x03 => ["loop", "block_type"],
+    0x04 => ["if", "block_type"],
+    0x05 => ["else", ""],
+    0x06 => ["RESERVED", ""],
+    0x07 => ["RESERVED", ""],
+    0x08 => ["RESERVED", ""],
+    0x09 => ["RESERVED", ""],
+    0x0a => ["RESERVED", ""],
+    0x0b => ["end", ""],
+    0x0c => ["br", "varuint32"],
+    0x0d => ["br_if", "varuint32"],
+    0x0e => ["br_table", "br_table"],
+    0x0f => ["return", ""],
+
+    // Call operators
+    0x10 => ["call", "varuint32"],
+    0x11 => ["call_indirect", "varuint32+varuint1"],
+
+    0x12 => ["RESERVED", ""],
+    0x13 => ["RESERVED", ""],
+    0x14 => ["RESERVED", ""],
+    0x15 => ["RESERVED", ""],
+    0x16 => ["RESERVED", ""],
+    0x17 => ["RESERVED", ""],
+    0x18 => ["RESERVED", ""],
+    0x19 => ["RESERVED", ""],
+
+    // Parametric operators
+    0x1a => ["drop", ""],
+    0x1b => ["select", ""],
+
+    0x1c => ["RESERVED", ""],
+    0x1d => ["RESERVED", ""],
+    0x1e => ["RESERVED", ""],
+    0x1f => ["RESERVED", ""],
+
+    // Variable access
+    0x20 => ["get_local", "varuint32"],
+    0x21 => ["set_local", "varuint32"],
+    0x22 => ["tee_local", "varuint32"],
+    0x23 => ["get_global", "varuint32"],
+    0x24 => ["set_global", "varuint32"],
+
+    0x25 => ["RESERVED", ""],
+    0x26 => ["RESERVED", ""],
+    0x27 => ["RESERVED", ""],
+
+    // Memory-related operators
+    0x28 => ["i32.load", "memory_immediate"],
+    0x29 => ["i64.load", "memory_immediate"],
+    0x2a => ["f32.load", "memory_immediate"],
+    0x2b => ["f64.load", "memory_immediate"],
+    0x2c => ["i32.load8_s", "memory_immediate"],
+    0x2d => ["i32.load8_u", "memory_immediate"],
+    0x2e => ["i32.load16_s", "memory_immediate"],
+    0x2f => ["i32.load16_u", "memory_immediate"],
+    0x30 => ["i64.load8_s", "memory_immediate"],
+    0x31 => ["i64.load8_u", "memory_immediate"],
+    0x32 => ["i64.load16_s", "memory_immediate"],
+    0x33 => ["i64.load16_u", "memory_immediate"],
+    0x34 => ["i64.load32_s", "memory_immediate"],
+    0x35 => ["i64.load32_u", "memory_immediate"],
+    0x36 => ["i32.store", "memory_immediate"],
+    0x37 => ["i64.store", "memory_immediate"],
+    0x38 => ["f32.store", "memory_immediate"],
+    0x39 => ["f64.store", "memory_immediate"],
+    0x3a => ["i32.store8", "memory_immediate"],
+    0x3b => ["i32.store16", "memory_immediate"],
+    0x3c => ["i64.store8", "memory_immediate"],
+    0x3d => ["i64.store16", "memory_immediate"],
+    0x3e => ["i64.store32", "memory_immediate"],
+    0x3f => ["current_memory", "varuint1"],
+    0x40 => ["grow_memory", "varuint1"],
+
+    // Constants
+    0x41 => ["i32.const", "varint32"],
+    0x42 => ["i64.const", "varint64"],
+    0x43 => ["f32.const", "uint32"],
+    0x44 => ["f64.const", "uint64"],
+
+    // Comparison operators
+    0x45 => ["i32.eqz", ""],
+    0x46 => ["i32.eq", ""],
+    0x47 => ["i32.ne", ""],
+    0x48 => ["i32.lt_s", ""],
+    0x49 => ["i32.lt_u", ""],
+    0x4a => ["i32.gt_s", ""],
+    0x4b => ["i32.gt_u", ""],
+    0x4c => ["i32.le_s", ""],
+    0x4d => ["i32.le_u", ""],
+    0x4e => ["i32.ge_s", ""],
+    0x4f => ["i32.ge_u", ""],
+
+    0x50 => ["i64.eqz", ""],
+    0x51 => ["i64.eq", ""],
+    0x52 => ["i64.ne", ""],
+    0x53 => ["i64.lt_s", ""],
+    0x54 => ["i64.lt_u", ""],
+    0x55 => ["i64.gt_s", ""],
+    0x56 => ["i64.gt_u", ""],
+    0x57 => ["i64.le_s", ""],
+    0x58 => ["i64.le_u", ""],
+    0x59 => ["i64.ge_s", ""],
+    0x5a => ["i64.ge_u", ""],
+
+    0x5b => ["f32.eq", ""],
+    0x5c => ["f32.ne", ""],
+    0x5d => ["f32.lt", ""],
+    0x5e => ["f32.gt", ""],
+    0x5f => ["f32.le", ""],
+    0x60 => ["f32.ge", ""],
+
+    0x61 => ["f64.eq", ""],
+    0x62 => ["f64.ne", ""],
+    0x63 => ["f64.lt", ""],
+    0x64 => ["f64.gt", ""],
+    0x65 => ["f64.le", ""],
+    0x66 => ["f64.ge", ""],
+
+    // Numeric operators
+    0x67 => ["i32.clz", ""],
+    0x68 => ["i32.ctz", ""],
+    0x69 => ["i32.popcnt", ""],
+    0x6a => ["i32.add", ""],
+    0x6b => ["i32.sub", ""],
+    0x6c => ["i32.mul", ""],
+    0x6d => ["i32.div_s", ""],
+    0x6e => ["i32.div_u", ""],
+    0x6f => ["i32.rem_s", ""],
+    0x70 => ["i32.rem_u", ""],
+    0x71 => ["i32.and", ""],
+    0x72 => ["i32.or", ""],
+    0x73 => ["i32.xor", ""],
+    0x74 => ["i32.shl", ""],
+    0x75 => ["i32.shr_s", ""],
+    0x76 => ["i32.shr_u", ""],
+    0x77 => ["i32.rotl", ""],
+    0x78 => ["i32.rotr", ""],
+
+    0x79 => ["i64.clz", ""],
+    0x7a => ["i64.ctz", ""],
+    0x7b => ["i64.popcnt", ""],
+    0x7c => ["i64.add", ""],
+    0x7d => ["i64.sub", ""],
+    0x7e => ["i64.mul", ""],
+    0x7f => ["i64.div_s", ""],
+    0x80 => ["i64.div_u", ""],
+    0x81 => ["i64.rem_s", ""],
+    0x82 => ["i64.rem_u", ""],
+    0x83 => ["i64.and", ""],
+    0x84 => ["i64.or", ""],
+    0x85 => ["i64.xor", ""],
+    0x86 => ["i64.shl", ""],
+    0x87 => ["i64.shr_s", ""],
+    0x88 => ["i64.shr_u", ""],
+    0x89 => ["i64.rotl", ""],
+    0x8a => ["i64.rotr", ""],
+
+    0x8b => ["f32.abs", ""],
+    0x8c => ["f32.neg", ""],
+    0x8d => ["f32.ceil", ""],
+    0x8e => ["f32.floor", ""],
+    0x8f => ["f32.trunc", ""],
+    0x90 => ["f32.nearest", ""],
+    0x91 => ["f32.sqrt", ""],
+    0x92 => ["f32.add", ""],
+    0x93 => ["f32.sub", ""],
+    0x94 => ["f32.mul", ""],
+    0x95 => ["f32.div", ""],
+    0x96 => ["f32.min", ""],
+    0x97 => ["f32.max", ""],
+    0x98 => ["f32.copysign", ""],
+
+    0x99 => ["f64.abs", ""],
+    0x9a => ["f64.neg", ""],
+    0x9b => ["f64.ceil", ""],
+    0x9c => ["f64.floor", ""],
+    0x9d => ["f64.trunc", ""],
+    0x9e => ["f64.nearest", ""],
+    0x9f => ["f64.sqrt", ""],
+    0xa0 => ["f64.add", ""],
+    0xa1 => ["f64.sub", ""],
+    0xa2 => ["f64.mul", ""],
+    0xa3 => ["f64.div", ""],
+    0xa4 => ["f64.min", ""],
+    0xa5 => ["f64.max", ""],
+    0xa6 => ["f64.copysign", ""],
+
+    // Conversions
+    0xa7 => ["i32.wrap_i64", ""],
+    0xa8 => ["i32.trunc_f32_s", ""],
+    0xa9 => ["i32.trunc_f32_u", ""],
+    0xaa => ["i32.trunc_f64_s", ""],
+    0xab => ["i32.trunc_f64_u", ""],
+
+    0xac => ["i64.extend_i32_s", ""],
+    0xad => ["i64.extend_i32_u", ""],
+    0xae => ["i64.trunc_f32_s", ""],
+    0xaf => ["i64.trunc_f32_u", ""],
+    0xb0 => ["i64.trunc_f64_s", ""],
+    0xb1 => ["i64.trunc_f64_u", ""],
+
+    0xb2 => ["f32.convert_i32_s", ""],
+    0xb3 => ["f32.convert_i32_u", ""],
+    0xb4 => ["f32.convert_i64_s", ""],
+    0xb5 => ["f32.convert_i64_u", ""],
+    0xb6 => ["f32.demote_f64", ""],
+
+    0xb7 => ["f64.convert_i32_s", ""],
+    0xb8 => ["f64.convert_i32_u", ""],
+    0xb9 => ["f64.convert_i64_s", ""],
+    0xba => ["f64.convert_i64_u", ""],
+    0xbb => ["f64.promote_f32", ""],
+
+    // Reinterpretations
+    0xbc => ["i32.reinterpret_f32", ""],
+    0xbd => ["i64.reinterpret_f64", ""],
+    0xbe => ["f32.reinterpret_i32", ""],
+    0xbf => ["f64.reinterpret_i64", ""]
+};
+
+var LOAD_SIZE as Dictionary<Number> = {
+    0x28 => 4,
+    0x29 => 8,
+    0x2a => 4,
+    0x2b => 8,
+    0x2c => 1,
+    0x2d => 1,
+    0x2e => 2,
+    0x2f => 2,
+    0x30 => 1,
+    0x31 => 1,
+    0x32 => 2,
+    0x33 => 2,
+    0x34 => 4,
+    0x35 => 4,
+    0x36 => 4,
+    0x37 => 8,
+    0x38 => 4,
+    0x39 => 8,
+    0x3a => 1,
+    0x3b => 2,
+    0x3c => 1,
+    0x3d => 2,
+    0x3e => 4,
+    0x40 => 1,
+    0x41 => 2,
+    0x42 => 1,
+    0x43 => 2,
+    0x44 => 4
+};
+
+
+// ####################################
 // General Functions
-// ######################################
+// ####################################
+
 
 function assert(condition as Boolean, message as String) as Void {
     if (!condition) {
@@ -72,7 +566,6 @@ function replaceString(original as String, oldSubstring as String, newSubstring 
 
 // math functions
 
-
 // https://forums.garmin.com/developer/connect-iq/f/discussion/338071/testing-for-nan/1777041#1777041
 const FLT_MAX = 3.4028235e38f;
 
@@ -84,15 +577,14 @@ function isInfinite(x as Float) as Boolean {
     return (x < -FLT_MAX || FLT_MAX < x);
 }
 
-function unpack_nan32(i32) {
-    throw new NotImplementedException();
-    // return Float32.fromBits(i32);
-}
 
-function unpack_nan64(i64) {
-    throw new NotImplementedException();
-    // return Float64.fromBits(i64);
-}
+function unpack_nan32(i32) { throw new NotImplementedException(); }
+// def unpack_nan32(i32):
+//     return struct.unpack('f', struct.pack('I', i32))[0]
+
+function unpack_nan64(i64) { throw new NotImplementedException(); }
+// def unpack_nan64(i64):
+//     return struct.unpack('d', struct.pack('Q', i64))[0]
 
 function parse_nan(type, arg) {
     if (type == F32) {
@@ -101,6 +593,7 @@ function parse_nan(type, arg) {
         return unpack_nan64(0x7ff8000000000000l);
     }
 }
+
 function parse_number(type, arg) as ValueTupleType {
     arg = replaceString(arg, "_", "");
     var v;
@@ -159,6 +652,9 @@ function irem_s(a, b) {
     return (a * b > 0) ? (a % b) : -(-a % b);
 }
 
+
+//
+
 function rotl32(a, cnt) {
     return ((a << (cnt % 0x20)) & 0xffffffff) | (a >> (0x20 - (cnt % 0x20)));
 }
@@ -183,6 +679,8 @@ function bytes2int8(b) {
     var val = b[0];
     return (val & 0x80) ? (val - 0x100) : val;
 }
+
+//
 
 function bytes2uint16(b) {
     return (b[1] << 8) + b[0];
@@ -222,6 +720,8 @@ function int2int32(i) {
     return (val & 0x80000000) ? (val | (~0xffffffff)) : val;
 }
 
+//
+
 function bytes2uint64(b) {
     return ((b[7] << 56) + (b[6] << 48) + (b[5] << 40) + (b[4] << 32) +
             (b[3] << 24) + (b[2] << 16) + (b[1] << 8) + b[0]);
@@ -246,6 +746,8 @@ function bytes2int64(b) {
     //         (b[3] << 24) + (b[2] << 16) + (b[1] << 8) + b[0]);
     // return (val & 0x8000000000000000l) ? (val - 0x10000000000000000l) : val;
 }
+
+//
 
 function int2uint64(i) {
     return i & 0xffffffffffffffffl;
@@ -589,6 +1091,7 @@ function popBlock(stack as StackType, callstack as CallStackType, sp as Number, 
     return [block, ra, sp, origFp, csp];
 }
 
+
 function doCall(stack as StackType, callstack as CallStackType, sp as Number, fp as Number, csp as Number, func as Function, pc as Number, indirect as Boolean) as Array<Number> {
     // Push block, stack size and return address onto callstack
     var t = func.type;
@@ -660,6 +1163,7 @@ function doCallImport(stack as StackType, sp as Number, memory as Memory, import
 
 
 // Main loop/JIT
+
 
 
 function getLocationStr(opcode as Number, pc as Number, code as Array<Number>, function_ as Array, table as Dictionary, blockMap as Dictionary) as String {
@@ -1730,3 +2234,687 @@ function interpretMvp(module_,
 
      return [pc, sp, fp, csp];
 }
+
+// ####################################
+// Higher level classes
+// ####################################
+
+class Reader {
+    public var bytes as ByteArray;
+    public var pos as Number;
+
+    public function initialize(bytes as ByteArray) {
+        self.bytes = bytes;
+        self.pos = 0;
+    }
+
+    public function readByte() as Number {
+        var b = self.bytes[self.pos];
+        self.pos++;
+        return b;
+    }
+
+    public function readWord() as Number {
+        throw new NotImplementedException();
+        // var w = bytes2uint32(self.bytes.slice(self.pos, self.pos + 4));
+        // self.pos += 4;
+        // return w;
+    }
+
+    public function readBytes(cnt as Number) as ByteArray {
+        throw new NotImplementedException();
+        // if (VALIDATE) {
+        //     if (cnt < 0 || self.pos < 0) {
+        //         throw new Lang.Exception("Invalid read parameters");
+        //     }
+        // }
+        // var bytes = self.bytes.slice(self.pos, self.pos + cnt);
+        // self.pos += cnt;
+        // return bytes;
+    }
+
+    public function read_LEB(maxbits as Number, signed as Boolean) as Number {
+        throw new NotImplementedException();
+        // var result = $.read_LEB(self.bytes, self.pos, maxbits, signed);
+        // self.pos = result[0];
+        // return result[1];
+    }
+
+    public function eof() as Boolean {
+        return self.pos >= self.bytes.size();
+    }
+
+    public function toString() as String {
+        return "Reader(pos: " + self.pos + ", bytes: " + self.bytes.size() + " bytes)";
+    }
+}
+
+class Memory {
+    public var pages as Number;
+    public var bytes as ByteArray;
+
+    public function initialize(pages as Number, initialBytes as ByteArray or Null) {
+        System.println("memory pages: " + pages);
+        self.pages = pages;
+        if (initialBytes != null) {
+            self.bytes = initialBytes;
+            var remainingSize = (pages * (1 << 16)) - initialBytes.size();
+            if (remainingSize > 0) {
+                self.bytes.addAll(new [remainingSize]b);
+            }
+        } else {
+            self.bytes = new [pages * (1 << 16)]b;
+        }
+    }
+
+    public function grow(pages as Number) as Void {
+        self.pages += pages.toNumber();
+        var additionalBytes = new [pages.toNumber() * (1 << 16)]b;
+        self.bytes.addAll(additionalBytes);
+    }
+
+    public function readByte(pos as Number) as Number {
+        return self.bytes[pos];
+    }
+
+    public function writeByte(pos as Number, val as Number) as Void {
+        self.bytes[pos] = val;
+    }
+
+    public function write(offset as Number, data as ByteArray) as Void {
+        if (offset + data.size() > self.bytes.size()) {
+            throw new WAException("Write operation exceeds memory bounds");
+        }
+        
+        // If writing at the end, we can use addAll for efficiency
+        if (offset == self.bytes.size()) {
+            self.bytes.addAll(data);
+        } else {
+            // Otherwise, we need to overwrite existing bytes
+            for (var i = 0; i < data.size(); i++) {
+                self.bytes[offset + i] = data[i];
+            }
+        }
+
+        var endOffset = offset + data.size();
+        self.bytes = self.bytes.slice(0, offset).addAll(data).addAll(self.bytes.slice(endOffset, null));
+
+    }
+
+    public function toString() as String {
+        return "Memory(pages: " + self.pages + ", bytes: " + self.bytes.size() + " bytes)";
+    }
+}
+
+class Import {
+    public var module_ as String;
+    public var field as String;
+    public var kind as Number;
+    public var type as Number;
+    public var elementType as Number;
+    public var initial as Number;
+    public var maximum as Number;
+    public var globalType as Number;
+    public var mutability as Number;
+
+    public function initialize(module_ as String, field as String, kind as Number, type as Number, 
+                               elementType as Number, initial as Number, maximum as Number, 
+                               globalType as Number, mutability as Number) {
+        self.module_ = module_;
+        self.field = field;
+        self.kind = kind;
+        self.type = type; // Function
+        self.elementType = elementType; // Table
+        self.initial = initial; // Table & Memory
+        self.maximum = maximum; // Table & Memory
+        self.globalType = globalType; // Global
+        self.mutability = mutability; // Global
+    }
+
+    public function toString() as String {
+        return "Import(module: '" + self.module_ + "', field: '" + self.field + "', kind: " + self.kind + ")";
+    }
+}
+
+class Export {
+    public var field as String;
+    public var kind as Number;
+    public var index as Number;
+
+    public function initialize(field as String, kind as Number, index as Number) {
+        self.field = field;
+        self.kind = kind;
+        self.index = index;
+    }
+
+    public function toString() as String {
+        return "Export(field: '" + self.field + "', kind: " + self.kind + ", index: " + self.index + ")";
+    }
+}
+
+
+class Module {
+    private var data as ByteArray;
+    private var rdr as Reader;
+    // private var importValue as ImportMethodType;
+    private var importFunction as ImportFunctionType;
+
+    // Sections
+    private var type as Array<Type>;
+    private var importList as Array<Import>;
+    var function_ as Array<Function>;
+    // private var fnImportCnt as Number;
+    private var table as Dictionary<Number, Array<Number>>;
+    private var exportList as Array<Export>;
+    private var exportMap as Dictionary<String, Export>;
+    private var globalList as Array<Global>;
+
+    private var memory as Memory;
+
+    // // block/loop/if blocks {start addr: Block, ...}
+    private var blockMap as Dictionary<Number, Block>;
+
+    // Execution state
+    var sp as Number;
+    private var fp as Number;
+    var stack as StackType;
+    private var csp as Number;
+    private var callstack as CallStackType;
+    private var startFunction as Number;
+
+    public var start_function as Number = -1;
+    
+    public function initialize(
+            data as ByteArray, 
+            // importValue as ImportMethodType, 
+            importFunction as ImportFunctionType, 
+            memory as Memory?,
+            types as Array<Type>,
+            // functions as ImportMethodType, 
+            functions as Array<Function>,
+            tables as Dictionary<Number, Array<Number>>,
+            globals as Array<Global>,
+            exports as Array<Export>,
+            exportMap as Dictionary<String, Export>
+            ) {
+        self.data = data;
+        self.rdr = new Reader(data);
+        // self.importValue = importValue;
+        self.importFunction = importFunction;
+
+        // Initialize sections
+        self.type = types;
+        self.importList = [];
+        self.function_ = functions;
+        // self.fnImportCnt = 0;
+        self.table = tables;//{ANYFUNC => []};
+        self.exportList = exports;
+        self.exportMap = exportMap;
+        self.globalList = globals;
+
+        if (memory != null) {
+            self.memory = memory;
+        } else {
+            self.memory = new Memory(1);  // default to 1 page
+        }
+
+        self.blockMap = {};
+
+        // Initialize execution state
+        self.sp = -1;
+        self.fp = -1;
+        self.stack = new [STACK_SIZE];
+        for (var i = 0; i < STACK_SIZE; i++) {
+            self.stack[i] = [0x00, 0, 0.0];
+        }
+        self.csp = -1;
+        var block = new Block(0x00, BLOCK_TYPE[I32], 0);
+        self.callstack = new [CALLSTACK_SIZE];
+        for (var i = 0; i < CALLSTACK_SIZE; i++) {
+            self.callstack[i] = [block, -1, -1, 0];
+        }
+        self.startFunction = -1;
+
+        // readMagic();
+        // readVersion();
+        // readSections();
+
+        dump();
+
+        // // Run the start function if set
+        // if (self.startFunction >= 0) {
+        //     var fidx = self.startFunction;
+        //     var func = self.function_[fidx];
+        //     System.println("Running start function 0x" + fidx.format("%x"));
+        //     if (TRACE) {
+        //         dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+        //     }
+        //     if (func instanceof FunctionImport) {
+        //         sp = doCallImport(self.stack, self.sp, self.memory, self.importFunction, func);
+        //     } else if (func instanceof Function) {
+        //         var result = doCall(self.stack, self.callstack, self.sp, self.fp, self.csp, func, self.rdr.bytes.size());
+        //         self.rdr.pos = result[0];
+        //         self.sp = result[1];
+        //         self.fp = result[2];
+        //         self.csp = result[3];
+        //     }
+        //     interpret();
+        // }
+    }
+
+    public function dump() as Void {
+        debug("module bytes: " + byteCodeRepr(self.rdr.bytes));
+        info("");
+
+        info("Types:");
+        for (var i = 0; i < self.type.size(); i++) {
+            info("  0x" + i.format("%x") + " " + type_repr(self.type[i]));
+        }
+
+        info("Imports:");
+        for (var i = 0; i < self.importList.size(); i++) {
+            var imp = self.importList[i];
+            if (imp.kind == 0x0) {  // Function
+                info("  0x" + i.format("%x") + " [type: " + imp.type + ", '" + imp.module_ + "." + imp.field + "', kind: " + 
+                      EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + ")]");
+            } else if (imp.kind == 0x1 || imp.kind == 0x2) {  // Table & Memory
+                info("  0x" + i.format("%x") + " ['" + imp.module_ + "." + imp.field + "', kind: " + 
+                      EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + "), initial: " + imp.initial + ", maximum: " + imp.maximum + "]");
+            } else if (imp.kind == 0x3) {  // Global
+                info("  0x" + i.format("%x") + " ['" + imp.module_ + "." + imp.field + "', kind: " + 
+                      EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + "), type: " + imp.globalType + ", mutability: " + imp.mutability + "]");
+            }
+        }
+
+        info("Functions:");
+        for (var i = 0; i < self.function_.size(); i++) {
+            info("  0x" + i.format("%x") + " " + funcRepr(self.function_[i]));
+        }
+        info("Tables:");
+        if (self.table != null && self.table.size() > 0) {
+            var keys = self.table.keys();
+            for (var i = 0; i < keys.size(); i++) {
+                var key = keys[i];
+                var entries = self.table[key];
+                var entryStrings = [];
+                for (var j = 0; j < entries.size(); j++) {
+                    entryStrings.add(entries[j].format("%x"));
+                }
+                info("  0x" + key.format("%x") + " -> [" + join(entryStrings, ",") + "]");
+            }
+        } else {
+            info("  No tables defined");
+        }
+
+        info("Memory:");
+        if (self.memory.pages > 0) {
+            for (var r = 0; r < 10; r++) {
+                var hexValues = [];
+                for (var j = 0; j < 16; j++) {
+                    var byteValue = self.memory.bytes[r * 16 + j];
+                    hexValues.add(hexpad(byteValue, 2));
+                }
+                info("  0x" + hexpad(r * 16, 3) + " [" + join(hexValues, ",") + "]");
+            }
+        }
+
+        info("Global:");
+        for (var i = 0; i < self.globalList.size(); i++) {
+            info("  0x" + i + " [" + value_repr(self.globalList[i]) + "]");
+        }
+
+        info("Exports:");
+        for (var i = 0; i < self.exportList.size(); i++) {
+            info("  0x" + i.format("%x") + " " + export_repr(self.exportList[i]));
+        }
+        info("");
+
+        var blockKeys = self.blockMap.keys();
+        blockKeys.sort(null);
+        var blockMapStrings = [];
+        for (var i = 0; i < blockKeys.size(); i++) {
+            var k = blockKeys[i];
+            var bl = self.blockMap[k];
+            blockMapStrings.add(blockRepr(bl) + "[0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]");
+        }
+        info("block_map: [" + join(blockMapStrings, ", ") + "]");
+        info("");
+    }
+
+    function hexpad(x as Number, cnt as Number) as String {
+        return x.format("%0" + cnt + "x");
+    }
+
+    public function interpret() as Void {
+        var result = interpretMvp(self,
+            // Greens
+            self.rdr.pos, self.rdr.bytes, self.function_,
+            self.table, self.blockMap,
+            // Reds
+            self.memory, self.sp, self.stack, self.fp, self.csp,
+            self.callstack);
+        
+        self.rdr.pos = result[0];
+        self.sp = result[1];
+        self.fp = result[2];
+        self.csp = result[3];
+    }
+
+    public function run(fname as String, args as Array<Array<Number>>, printReturn as Boolean, returnValue as Boolean) as Number | ValueTupleType {
+        // Reset stacks
+        self.sp = -1;
+        self.fp = -1;
+        self.csp = -1;
+
+        var fidx = self.exportMap[fname].index;
+
+        // Check arg type
+        var tparams = self.function_[fidx].type.params;
+        if (tparams.size() != args.size()) {
+            throw new WAException("arg count mismatch " + tparams.size() + " != " + args.size());
+        }
+        for (var idx = 0; idx < args.size(); idx++) {
+            if (tparams[idx] != args[idx][0]) {
+                throw new WAException("arg type mismatch " + tparams[idx] + " != " + args[idx][0]);
+            }
+            self.sp++;
+            self.stack[self.sp] = args[idx];
+        }
+
+        System.println("Running function '" + fname + "' (0x" + fidx.format("%x") + ")");
+        if (TRACE) {
+            dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+        }
+        var result = doCall(self.stack, self.callstack, self.sp, self.fp, self.csp, self.function_[fidx], 0, false);
+        self.rdr.pos = result[0];
+        self.sp = result[1];
+        self.fp = result[2];
+        self.csp = result[3];
+
+        interpret();
+        if (TRACE) {
+            dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+        }
+        var targs = [];
+        for (var i = 0; i < args.size(); i++) {
+            targs.add(value_repr(args[i]));
+        }
+        if (self.sp >= 0) {
+            var ret = self.stack[self.sp];
+            self.sp--;
+            System.println(fname + "(" + Lang.format("$1$", [join(targs, ", ")]) + ") = " + value_repr(ret));
+            if (printReturn) {
+                System.println(value_repr(ret));
+            }
+            if (returnValue) {
+                return ret;
+            }
+        } else {
+            System.println(fname + "(" + Lang.format("$1$", [join(targs, ", ")]) + ")");
+        }
+        return 0;
+    }
+
+    public function toString() as String {
+        return "Module(types: " + self.type.size() + ", functions: " + self.function_.size() + ", exports: " + self.exportList.size() + ")";
+    }
+}
+
+// ######################################
+// # Imported functions points
+// ######################################
+
+
+// def readline(prompt):
+//     res = ''
+//     sys.stdout.write(prompt)
+//     sys.stdout.flush()
+//     while True:
+//         buf = sys.stdin.readline()
+//         if not buf: raise EOFError()
+//         res += buf
+//         if res[-1] == '\n': return res[:-1]
+
+// def get_string(mem, addr):
+//     slen = 0
+//     assert addr >= 0
+//     while mem.bytes[addr+slen] != 0: slen += 1
+//     bytes_data = mem.bytes[addr:addr+slen]
+//     return bytes(bytes_data).decode('utf-8')
+
+// def put_string(mem, addr, string):
+//     pos = addr
+//     bytes_data = string.encode('utf-8')
+//     for i in range(len(bytes_data)):
+//         mem.bytes[pos] = bytes_data[i]
+//         pos += 1
+//     mem.bytes[pos] = 0  # zero terminated
+//     return pos
+
+// #
+// # Imports (global values and functions)
+
+// IMPORT_VALUES = {
+//     "spectest.global_i32": (I32, 666, 666.6),
+//     "env.memoryBase":      (I32, 0, 0.0)
+// }
+
+// def import_value(module, field):
+//     iname = "%s.%s" % (module, field)
+//     #return (I32, 377, 0.0)
+//     if iname in IMPORT_VALUES:
+//         return IMPORT_VALUES[iname]
+//     else:
+//         raise Exception("global import %s not found" % (iname))
+
+// def spectest_print(mem, args):
+//     if len(args) == 0: return []
+//     assert len(args) == 1
+//     assert args[0][0] == I32
+//     val = args[0][1]
+//     res = ""
+//     while val > 0:
+//         res = res + chr(val & 0xff)
+//         val = val>>8
+//     print("%s '%s'" % (value_repr(args[0]), res))
+//     return []
+
+// def env_printline(mem, args):
+//     string = get_string(mem, args[0][1])
+//     os.write(1, string.encode('utf-8'))
+//     return [(I32, 1, 1.0)]
+
+// def env_readline(mem, args):
+//     prompt = get_string(mem, args[0][1])
+//     buf = args[1][1]        # I32
+//     max_length = args[2][1] # I32
+
+//     try:
+//         str = readline(prompt)
+//         max_length -= 1
+//         assert max_length >= 0
+//         str = str[0:max_length]
+//         put_string(mem, buf, str)
+//         return [(I32, buf, 0.0)]
+//     except EOFError:
+//         return [(I32, 0, 0.0)]
+
+// def env_read_file(mem, args):
+//     path = get_string(mem, args[0][1])
+//     buf = args[1][1]
+//     with open(path, 'r', encoding='utf-8') as file:
+//         content = file.read()
+//     slen = put_string(mem, buf, content)
+//     return [(I32, slen, 0.0)]
+
+// def env_get_time_ms(mem, args):
+//     # subtract 30 years to make sure it fits into i32 without wrapping
+//     # or becoming negative
+//     return [(I32, int(time.time()*1000 - 0x38640900), 0.0)]
+
+// def host_putchar(mem, args):
+//     assert len(args) == 1
+//     assert args[0][0] == I32
+//     char_code = args[0][1]
+//     os.write(1, bytes([char_code]))
+//     return [(I32, char_code, 0.0)]
+
+// def import_function(module, field, mem, args):
+//     fname = "%s.%s" % (module, field)
+//     if fname in ["spectest.print", "spectest.print_i32"]:
+//         return spectest_print(mem, args)
+//     elif fname == "env.printline":
+//         return env_printline(mem, args)
+//     elif fname == "env.readline":
+//         return env_readline(mem, args)
+//     elif fname == "env.read_file":
+//         return env_read_file(mem, args)
+//     elif fname == "env.get_time_ms":
+//         return env_get_time_ms(mem, args)
+//     elif fname == "env.exit":
+//         raise ExitException(args[0][1])
+//     elif fname == "host.putchar":
+//         return host_putchar(mem, args)
+//     else:
+//         raise Exception("function import %s not found" % (fname))
+
+// def parse_command(module, args):
+//     fname = args[0]
+//     args = args[1:]
+//     run_args = []
+//     fidx = module.export_map[fname].index
+//     tparams = module.function[fidx].type.params
+//     for idx, arg in enumerate(args):
+//         arg = args[idx].lower()
+//         assert isinstance(arg, str)
+//         run_args.append(parse_number(tparams[idx], arg))
+//     return fname, run_args
+
+// def usage(argv):
+//     print("%s [--repl] [--argv] [--memory-pages PAGES] WASM [ARGS...]" % argv[0])
+
+// ######################################
+// # Entry points
+// ######################################
+
+
+// def entry_point(argv):
+//     try:
+//         # Argument handling
+//         repl = False
+//         argv_mode = False
+//         memory_pages = 1
+//         fname = None
+//         args = []
+//         run_args = []
+//         idx = 1
+//         while idx < len(argv):
+//             arg = argv[idx]
+//             idx += 1
+//             if arg == "--help":
+//                 usage(argv)
+//                 return 1
+//             elif arg == "--repl":
+//                 repl = True
+//             elif arg == "--argv":
+//                 argv_mode = True
+//                 memory_pages = 256
+//             elif arg == "--memory-pages":
+//                 memory_pages = int(argv[idx])
+//                 idx += 1
+//             elif arg == "--":
+//                 continue
+//             elif arg.startswith('--'):
+//                 print("Unknown option '%s'" % arg)
+//                 usage(argv)
+//                 return 2
+//             else:
+//                 args.append(arg)
+//         with open(args[0], 'rb') as file:
+//             wasm = file.read()
+//         args = args[1:]
+
+//         #
+//         mem = Memory(memory_pages)
+
+//         if argv_mode:
+//             # Convert args into C argv style array of strings and
+//             # store at the beginning of memory. This must be before
+//             # the module is initialized so that we can properly set
+//             # the memoryBase global before it is imported.
+//             args.insert(0, argv[0])
+//             string_next = (len(args) + 1) * 4
+//             for i, arg in enumerate(args):
+//                 slen = put_string(mem, string_next, arg)
+//                 write_I32(mem.bytes, i*4, string_next) # zero terminated
+//                 string_next += slen
+
+//             # Set memoryBase to next 64-bit aligned address
+//             string_next += (8 - (string_next % 8))
+//             IMPORT_VALUES['env.memoryBase'] = (I32, string_next, 0.0)
+
+
+//         m = Module(wasm, import_value, import_function, mem)
+
+//         if argv_mode:
+//             fname = "_main"
+//             fidx = m.export_map[fname].index
+//             arg_count = len(m.function[fidx].type.params)
+//             if arg_count == 2:
+//                 run_args = [(I32, len(args), 0.0), (I32, 0, 0.0)]
+//             elif arg_count == 0:
+//                 run_args = []
+//             else:
+//                 raise Exception("_main has %s args, should have 0 or 2" %
+//                         arg_count)
+//         else:
+//             # Convert args to expected numeric type. This must be
+//             # after the module is initialized so that we know what
+//             # types the arguments are
+//             fname, run_args = parse_command(m, args)
+
+//         if '__post_instantiate' in m.export_map:
+//             m.run('__post_instantiate', [])
+
+//         if not repl:
+
+//             # Invoke one function and exit
+//             try:
+//                 return m.run(fname, run_args, not argv_mode)
+//             except WAException as e:
+//                 os.write(2, "".join(traceback.format_exception(*sys.exc_info())))
+//                 os.write(2, "%s\n" % e.message)
+//                 return 1
+//         else:
+//             # Simple REPL
+//             while True:
+//                 try:
+//                     line = readline("webassembly> ")
+//                     if line == "": continue
+
+//                     fname, run_args = parse_command(m, line.split(' '))
+//                     res = m.run(fname, run_args, True)
+//                     if not res == 0:
+//                         return res
+
+//                 except WAException as e:
+//                     os.write(2, "Exception: %s\n" % e.message)
+//                 except EOFError as e:
+//                     break
+
+//     except WAException as e:
+//         sys.stderr.write("".join(traceback.format_exception(*sys.exc_info())))
+//         sys.stderr.write("Exception: %s\n" % str(e))
+//     except ExitException as e:
+//         return e.code
+//     except Exception as e:
+//         sys.stderr.write("".join(traceback.format_exception(*sys.exc_info())))
+//         return 1
+
+//     return 0
+
+// def target(*args):
+//     return entry_point
+
+// if __name__ == '__main__':
+//     sys.exit(entry_point(sys.argv))
