@@ -1,4 +1,4 @@
 <menu id="MainMenu">
-    <menu-item id="item_1" label="@Strings.menu_label_1" />
-    <menu-item id="item_2" label="@Strings.menu_label_2" />
+    <menu-item id="add12" label="1+2" />
+    <menu-item id="add16" label="1+6" />
 </menu>

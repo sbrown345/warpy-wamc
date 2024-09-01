@@ -3,9 +3,11 @@ import Toybox.Lang;
 import Toybox.WatchUi;
 
 class wamcApp extends Application.AppBase {
+    var waModule;
 
     function initialize() {
         AppBase.initialize();
+        waModule = GeneratedWasmModule.createModule();
     }
 
     // onStart() is called on application start up
@@ -21,6 +23,12 @@ class wamcApp extends Application.AppBase {
         return [ new wamcView(), new wamcDelegate() ];
     }
 
+    function add(a as Number, b as Number) as ValueTupleType {
+        var run_args = [[I32, a, 0.0], [I32, b, 0.0]]; // type, int, float
+        var result = waModule.run("addTwo", run_args, true, true);
+        System.println("result = " + result);
+        return result;
+    }
 }
 
 function getApp() as wamcApp {

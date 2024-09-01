@@ -12,4 +12,8 @@ class wamcDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
+    function onSelect() as Boolean {
+        var result = getApp().add(12, 21);
+        WatchUi.showToast("res=" + result, null);
+    }
 }
