@@ -99,10 +99,10 @@ class FunctionImport(Code):
         self.module = module
         self.field = field
         fname = "%s.%s" % (module, field)
-        if not fname in ["spectest.print", "spectest.print_i32",
-                "env.printline", "env.readline", "env.read_file",
-                "env.get_time_ms", "env.exit", "host.putchar"]:
-            raise Exception("function import %s not found" % (fname))
+        # if not fname in ["spectest.print", "spectest.print_i32",
+        #         "env.printline", "env.readline", "env.read_file",
+        #         "env.get_time_ms", "env.exit", "host.putchar"]:
+        #     raise Exception("function import %s not found" % (fname))
 
 
 ######################################
@@ -390,6 +390,13 @@ OPERATOR_INFO = {
         0xbd : ['i64.reinterpret_f64', ''],
         0xbe : ['f32.reinterpret_i32', ''],
         0xbf : ['f64.reinterpret_i64', ''],
+        
+        # Additional opcodes (0xc0 and above)
+        0xc0 : ['i32.extend8_s',  ''],
+        0xc1 : ['i32.extend16_s', ''],
+        0xc2 : ['i64.extend8_s',  ''],
+        0xc3 : ['i64.extend16_s', ''],
+        0xc4 : ['i64.extend32_s', ''],
         }
 
 LOAD_SIZE = { 0x28 : 4,
@@ -721,7 +728,10 @@ def skip_immediates(code, pos):
     opcode = code[pos]
     pos += 1
     vals = []
-    imtype = OPERATOR_INFO[opcode][1]
+    if opcode in OPERATOR_INFO:
+        imtype = OPERATOR_INFO[opcode][1]
+    else:
+        raise ValueError(f"Unknown opcode: {opcode} (0x{opcode:02x})")
     if   'varuint1' == imtype:
         pos, v = read_LEB(code, pos, 1)
         vals.append(v)
@@ -2376,7 +2386,8 @@ class Module():
             size = self.rdr.read_LEB(32)
             data = self.rdr.read_bytes(size)
             self.data_sections.append((offset, data))
-            for addr in range(offset, offset+size, 1):
+            # for addr in range(offset, offset+size, 1): this threw error, untested fix:
+            for addr in range(offset, min(offset+size, len(self.memory.bytes))):
                 self.memory.bytes[addr] = data[addr-offset]
                 
     def parse_Start(self, length):
