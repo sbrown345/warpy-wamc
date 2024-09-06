@@ -17,6 +17,12 @@ class wamcMenuDelegate extends WatchUi.MenuInputDelegate {
         } else if (item == :add16) {
             a = 1;
             b = 6;
+        } else if (item == :fizzbuzz) {
+            var m = Wamc_test_fizzbuzz.createModule();
+            var run_args = [];
+            var result = m.runStartFunction();
+            System.println("result = " + result);
+            System.println("fizzbuzz output = \n" + host_output);
         }
 
         var result = getApp().add(a, b);

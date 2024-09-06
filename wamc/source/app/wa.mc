@@ -1,4 +1,5 @@
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.System;
 
 typedef ImportMethodType as Method(module_ as Module, field as String) as Array<Number>;
@@ -8,12 +9,12 @@ typedef CallStackType as Array<Array<Number or Block or Function>>;
 typedef Global as ValueTupleType;
 typedef ValueTupleType as [Types, Number, Float];
 
-// var INFO  = false; // informational logging
-// var TRACE = false; // trace instructions/stacks
-// var DEBUG = false; // verbose logging
-var INFO  = true;
-var TRACE = true;
-var DEBUG = true;
+var INFO  = false; // informational logging
+var TRACE = false; // trace instructions/stacks
+var DEBUG = false; // verbose logging
+// var INFO  = true;
+// var TRACE = true;
+// var DEBUG = true;
 var VALIDATE = true;
 
 
@@ -47,8 +48,32 @@ function float_fromhex(s) {
 }
 
 function compareValueType(a as ValueTupleType, b as ValueTupleType) as Boolean {
-    System.println("compareValueType: " + a + ", " + b);
-    return a[0] == b[0] and a[1] == b[1] and a[2] == b[2];
+    if (!(a instanceof Array) || !(b instanceof Array)) {
+        System.println("compareValueType: One or both arguments are not arrays");
+        return false;
+    }
+
+    if (a.size() != 3 || b.size() != 3) {
+        System.println("compareValueType: One or both arrays do not have exactly 3 elements");
+        return false;
+    }
+
+    if (a[0] != b[0]) {
+        System.println("compareValueType: Types do not match. a[0]: " + a[0] + ", b[0]: " + b[0]);
+        return false;
+    }
+
+    if (a[1] != b[1]) {
+        System.println("compareValueType: Integer values do not match. a[1]: " + a[1] + ", b[1]: " + b[1]);
+        return false;
+    }
+
+    if (a[2] != b[2]) {
+        System.println("compareValueType: Float values do not match. a[2]: " + a[2] + ", b[2]: " + b[2]);
+        return false;
+    }
+
+    return true;
 }
 
 function assertEqual(expected as ValueTupleType, actual as ValueTupleType) as Boolean {
@@ -60,15 +85,14 @@ function assertEqual(expected as ValueTupleType, actual as ValueTupleType) as Bo
     }
 }
 
-function assertTrap(expected as ValueTupleType, actual as ValueTupleType) as Boolean {
-    throw new NotImplementedException();
-    // if (!(result instanceof Trap)) {
-    //     return false;
-    // }
-    // if (!result.toString().equals(expectedAssertMessage)) {
-    //     System.println("Wrong trap message: " + result + ", expected: " + expectedAssertMessage);
-    //     return false;
-    // }
+function assertTrap(expectedAssertMessage as String, actual as Exception) as Boolean {
+    if (!(actual instanceof WAException)) {
+        return false;
+    }
+    if (!actual.toString().equals(expectedAssertMessage)) {
+        System.println("Wrong trap message: " + actual + ", expected: " + expectedAssertMessage);
+        return false;
+    }
     
     return true;
 }
@@ -91,6 +115,10 @@ class WAException extends Lang.Exception {
         Lang.Exception.initialize();
         self.mMessage = message;
     }
+
+    function toString() as String {
+        return self.mMessage;
+    }
 }
 
 class ExitException extends Lang.Exception {
@@ -112,12 +140,12 @@ class Type {
     public var results as Array<Number>;
     public var mask as Number;
 
-    function initialize(index as Number, form as Number, params as Array<Number>, results as Array<Number>, mask as Number) {
+    function initialize(index as Number, form as Number, params as Array<Number>, results as Array<Number>, mask as Number?) {
         self.index = index;
         self.form = form;
         self.params = params;
         self.results = results;
-        self.mask = mask; // default was 0x80
+        self.mask = mask == null ? 0x80 : mask; // default was 0x80 but it wanted to parse the mask
     }
 
     function toString() as String {
@@ -130,21 +158,21 @@ class Code {
 
 class Block extends Code {
     public var kind as Number;
-    public var type as Number;
+    public var type as Type;
     public var locals as Array<Number>;
     public var start as Number;
     public var end as Number;
     public var elseAddr as Number;
     public var brAddr as Number;
 
-    function initialize(kind as Number, type as Number, start as Number) {
+    function initialize(kind as Number, type as Type, start as Number, end as Number, elseAddr as Number, brAddr as Number) {
         self.kind = kind; // block opcode (0x00 for init_expr)
         self.type = type; // value_type
         self.locals = [];
         self.start = start;
-        self.end = 0;
-        self.elseAddr = 0;
-        self.brAddr = 0;
+        self.end = end;
+        self.elseAddr = elseAddr;
+        self.brAddr = brAddr;
     }
 
     function update(end as Number, brAddr as Number) as Void {
@@ -206,7 +234,7 @@ const MAGIC as Number = 0x6d736100;
 const VERSION as Number = 0x01;  // MVP
 
 const STACK_SIZE as Number = 32; //65536;
-const CALLSTACK_SIZE as Number = 8192;
+const CALLSTACK_SIZE as Number = 32; //8192;
 
 enum Types {
     I32     = 0x7f,  // -0x01
@@ -227,13 +255,12 @@ var VALUE_TYPE as Dictionary<Number, String> = {
     FUNC => "func",
     BLOCK => "block_type"
 };
-
-var BLOCK_TYPE as Dictionary = {
-    I32 => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => [I32]},
-    I64 => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => [I64]},
-    F32 => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => [F32]},
-    F64 => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => [F64]},
-    BLOCK => {"blockType" => BLOCK, "inputTypes" => [], "outputTypes" => []}
+var BLOCK_TYPE as Dictionary<Number, Type> = {
+    I32 => new Type(-1, BLOCK, [], [I32], null),
+    I64 => new Type(-1, BLOCK, [], [I64], null),
+    F32 => new Type(-1, BLOCK, [], [F32], null),
+    F64 => new Type(-1, BLOCK, [], [F64], null),
+    BLOCK => new Type(-1, BLOCK, [], [], null)
 };
 
 var BLOCK_NAMES as Dictionary<Number, String> = {
@@ -597,7 +624,7 @@ function replaceString(original as String, oldSubstring as String, newSubstring 
 // math functions
 
 // https://forums.garmin.com/developer/connect-iq/f/discussion/338071/testing-for-nan/1777041#1777041
-const FLT_MAX = 3.4028235e38f;
+const FLT_MAX = 3.4028235e38;
 
 function isNaN(x as Float) as Boolean {
     return x != x;
@@ -910,7 +937,7 @@ function funcRepr(f as FunctionImport or Function) as String {
     } else if (f instanceof Function) {
         var localTypes = [];
         for (var i = 0; i < f.locals.size(); i++) {
-            localTypes.add(VALUE_TYPE[f.locals[i]]);
+            localTypes.add("'" + VALUE_TYPE[f.locals[i]] + "'");
         }
         return "<type: 0x" + f.type.index.format("%x") + ", locals: " + localTypes + ", start: 0x" + f.start.format("%x") + ", end: 0x" + f.end.format("%x") + ">";
     } else {
@@ -932,6 +959,7 @@ function blockRepr(block as Block or Function) as String {
             block.type.results.size()
         ]);
     } else {
+        System.println("Unknown block type: " + block);
         return "Unknown block type";
     }
 }
@@ -960,7 +988,7 @@ function callstackRepr(csp as Number, bs as Array) as String {
     return "[" + join(callstackEntries, " ") + "]";
 }
 
-function dumpStacks(sp as Number, stack as Array, fp as Number, csp as Number, callstack as Array) as Void {
+function dump_stacks(sp as Number, stack as Array, fp as Number, csp as Number, callstack as Array) as Void {
     debug("      * stack:     " + stackRepr(sp, fp, stack));
     debug("      * callstack: " + callstackRepr(csp, callstack));
 }
@@ -1122,14 +1150,17 @@ function popBlock(stack as StackType, callstack as CallStackType, sp as Number, 
 }
 
 
-function doCall(stack as StackType, callstack as CallStackType, sp as Number, fp as Number, csp as Number, func as Function, pc as Number, indirect as Boolean) as Array<Number> {
+function do_call(stack as StackType, callstack as CallStackType, sp as Number, fp as Number, csp as Number, func as Function, pc as Number, indirect as Boolean) as Array<Number> {
     // Push block, stack size and return address onto callstack
     var t = func.type;
+    System.println("do_call: Setting return address to 0x" + pc.format("%x"));
     csp += 1;
     callstack[csp] = [func, sp - t.params.size(), fp, pc];
+    // System.println("do_call: pc:" + pc + ", " + callstackRepr(csp, callstack));
 
     // Update the pos/instruction counter to the function
     pc = func.start;
+    System.println("do_call: pc: 0x" + pc.format("%x"));
 
     if (TRACE) {
         info(Lang.format("  Calling function 0x$1$, start: 0x$2$, end: 0x$3$, $4$ locals, $5$ params, $6$ results",
@@ -1150,7 +1181,7 @@ function doCall(stack as StackType, callstack as CallStackType, sp as Number, fp
     return [pc, sp, fp, csp];
 }
 
-function doCallImport(stack as StackType, sp as Number, memory as Memory, importFunction as ImportFunctionType, func as FunctionImport) as Number {
+function do_callImport(stack as StackType, sp as Number, memory as Memory, importFunction as ImportFunctionType, func as FunctionImport) as Number {
     var t = func.type;
 
     var args = [] as Array<Array<Number>>;
@@ -1196,23 +1227,23 @@ function doCallImport(stack as StackType, sp as Number, memory as Memory, import
 
 
 
-function getLocationStr(opcode as Number, pc as Number, code as Array<Number>, function_ as Array, table as Dictionary, blockMap as Dictionary) as String {
+function get_location_str(opcode as Number, pc as Number, code as Array<Number>, function_ as Array, table as Dictionary, block_map as Dictionary) as String {
     return "0x" + pc.format("%x") + " " + OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ")";
 }
 
-function getBlock(blockMap as Dictionary, pc as Number) as Block {
-    return blockMap[pc];
+function get_block(block_map as Dictionary, pc as Number) as Block {
+    return block_map[pc];
 }
 
-function getFunction(function_ as Array, fidx as Number) as Function {
+function get_function(function_ as Array, fidx as Number) as Function {
     return function_[fidx];
 }
 
-function boundViolation(opcode as Number, addr as Number, pages as Number) as Boolean {
+function bound_violation(opcode as Number, addr as Number, pages as Number) as Boolean {
     return addr < 0 || addr + LOAD_SIZE[opcode] > pages * (1 << 16);
 }
 
-function getFromTable(table as Dictionary, tidx as Number, tableIndex as Number) as Number {
+function get_from_table(table as Dictionary, tidx as Number, tableIndex as Number) as Number {
     var tbl = table[tidx] as Array<Number>;
     if (tableIndex < 0 || tableIndex >= tbl.size()) {
         throw new WAException("undefined element");
@@ -1220,19 +1251,28 @@ function getFromTable(table as Dictionary, tidx as Number, tableIndex as Number)
     return tbl[tableIndex];
 }
 
-function interpretMvp(module_, 
+function interpret_mvp(module_, 
         // greens
-        pc, code, function_, table, blockMap, 
+        pc, code, function_, table, block_map, 
         // reds
         memory, sp, stack, fp, csp, callstack
     ) as [Number, Number, Number, Number] {
+    var operation_count = 0;
+
     while (pc < code.size()) {
         var opcode = code[pc];
         var curPc = pc;
         pc += 1;
 
+        operation_count++;
+
+        // if (operation_count > 100) {
+        //     break;
+        // }
+
         if (TRACE) {
-            dumpStacks(sp, stack, fp, csp, callstack);
+            info("operation_count: " + operation_count);
+            dump_stacks(sp, stack, fp, csp, callstack);
             var immediates = skipImmediates(code, curPc)[1];
             var immediateParts = [];
             for (var i = 0; i < immediates.size(); i++) {
@@ -1251,26 +1291,26 @@ function interpretMvp(module_,
         } else if (opcode == 0x02) {  // block
             var blockType = read_LEB(code, pc,  32, null);
             pc = blockType[0];
-            var block = getBlock(blockMap, curPc);
+            var block = get_block(block_map, curPc);
             csp += 1;
             callstack[csp] = [block, sp, fp, 0];
             if (TRACE) { debug("      - block: " + blockRepr(block)); }
         } else if (opcode == 0x03) {  // loop
             var blockType = read_LEB(code, pc,  32, null);
             pc = blockType[0];
-            var block = getBlock(blockMap, curPc);
+            var block = get_block(block_map, curPc);
             csp += 1;
             callstack[csp] = [block, sp, fp, 0];
             if (TRACE) { debug("      - block: " + blockRepr(block)); }
         } else if (opcode == 0x04) {  // if
             var blockType = read_LEB(code, pc,  32, null);
             pc = blockType[0];
-            var block = getBlock(blockMap, curPc);
+            var block = get_block(block_map, curPc);
             csp += 1;
             callstack[csp] = [block, sp, fp, 0];
             var cond = stack[sp];
             sp -= 1;
-            if (!cond[1]) {  // if false (I32)
+            if (!(cond[1] == 1)) {  // if false (I32)
                 // branch to else block or after end of if
                 if (block.elseAddr == 0) {
                     // no else block so pop if block and skip end
@@ -1325,7 +1365,7 @@ function interpretMvp(module_,
             pc = brDepth[0];
             var cond = stack[sp];
             sp -= 1;
-            if (cond[1]) {  // I32
+            if (cond[1] == 1) {  // I32
                 csp -= brDepth[1];
                 var block = callstack[csp][0];
                 pc = block.brAddr; // set to end for pop_block
@@ -1380,7 +1420,7 @@ function interpretMvp(module_,
         else if (opcode == 0x10) {  // call
             var fidx = read_LEB(code, pc,  32, null);
             pc = fidx[0];
-            var func = getFunction(function_, fidx[1]);
+            var func = get_function(function_, fidx[1]);
 
             if (func instanceof FunctionImport) {
                 var t = func.type;
@@ -1392,9 +1432,9 @@ function interpretMvp(module_,
                     debug("      - calling import " + func.module_ + "." + func.field + "(" +
                           join(paramTypes, ",") + ")");
                 }
-                sp = doCallImport(stack, sp, memory, module_.importFunction, func);
+                sp = do_callImport(stack, sp, memory, module_.importFunction, func);
             } else if (func instanceof Function) {
-                var callResult = doCall(stack, callstack, sp, fp, csp, func, pc);
+                var callResult = do_call(stack, callstack, sp, fp, csp, func, pc, false);
                 pc = callResult[0];
                 sp = callResult[1];
                 fp = callResult[2];
@@ -1410,13 +1450,13 @@ function interpretMvp(module_,
             sp -= 1;
             if (VALIDATE) { assert(typeIndexVal[0] == I32, "Expected I32"); }
             var tableIndex = typeIndexVal[1];  // I32
-            var fidx = getFromTable(table, ANYFUNC, tableIndex);
+            var fidx = get_from_table(table, ANYFUNC, tableIndex);
             if (VALIDATE) { assert(csp < CALLSTACK_SIZE, "call stack exhausted"); }
-            var func = getFunction(function_, fidx);
+            var func = get_function(function_, fidx);
             if (VALIDATE && func.type.mask != module_.type[tidx[1]].mask) {
                 throw new WAException("indirect call type mismatch (call type " + func.type.index + " and function type " + tidx[1] + " differ");
             }
-            var callResult = doCall(stack, callstack, sp, fp, csp, func, pc, true);
+            var callResult = do_call(stack, callstack, sp, fp, csp, func, pc, true);
             pc = callResult[0];
             sp = callResult[1];
             fp = callResult[2];
@@ -1436,7 +1476,7 @@ function interpretMvp(module_,
             var a = stack[sp-1];
             var b = stack[sp-2];
             sp -= 2;
-            if (cond[1]) {  // I32
+            if (cond[1] == 1) {  // I32
                 stack[sp] = b;
             } else {
                 stack[sp] = a;
@@ -1485,269 +1525,304 @@ function interpretMvp(module_,
 
         // Memory load operators
 
-//         elif 0x28 <= opcode <= 0x35:
-//             pc, flags = read_LEB(code, pc,  32, null)
-//             pc, offset = read_LEB(code, pc,  32, null)
-//             addr_val = stack[sp]
-//             sp -= 1
-//             if flags != 2:
-//                 if TRACE:
-//                     info("      - unaligned load - flags: 0x%x,"
-//                          " offset: 0x%x, addr: 0x%x" % (
-//                              flags, offset, addr_val[1]))
-//             addr = addr_val[1] + offset
-//             if bound_violation(opcode, addr, memory.pages):
-//                 raise WAException("out of bounds memory access")
-//             assert addr >= 0
-//             if   0x28 == opcode:  # i32.load
-//                 res = (I32, bytes2uint32(memory.bytes[addr:addr+4]), 0.0)
-//             elif 0x29 == opcode:  # i64.load
-//                 res = (I64, bytes2uint64(memory.bytes[addr:addr+8]), 0.0)
-//             elif 0x2a == opcode:  # f32.load
-//                 res = (F32, 0, read_F32(memory.bytes, addr))
-//             elif 0x2b == opcode:  # f64.load
-//                 res = (F64, 0, read_F64(memory.bytes, addr))
-//             elif 0x2c == opcode:  # i32.load8_s
-//                 res = (I32, bytes2int8(memory.bytes[addr:addr+1]), 0.0)
-//             elif 0x2d == opcode:  # i32.load8_u
-//                 res = (I32, memory.bytes[addr], 0.0)
-//             elif 0x2e == opcode:  # i32.load16_s
-//                 res = (I32, bytes2int16(memory.bytes[addr:addr+2]), 0.0)
-//             elif 0x2f == opcode:  # i32.load16_u
-//                 res = (I32, bytes2uint16(memory.bytes[addr:addr+2]), 0.0)
-//             elif 0x30 == opcode:  # i64.load8_s
-//                 res = (I64, bytes2int8(memory.bytes[addr:addr+1]), 0.0)
-//             elif 0x31 == opcode:  # i64.load8_u
-//                 res = (I64, memory.bytes[addr], 0.0)
-//             elif 0x32 == opcode:  # i64.load16_s
-//                 res = (I64, bytes2int16(memory.bytes[addr:addr+2]), 0.0)
-//             elif 0x33 == opcode:  # i64.load16_u
-//                 res = (I64, bytes2uint16(memory.bytes[addr:addr+2]), 0.0)
-//             elif 0x34 == opcode:  # i64.load32_s
-//                 res = (I64, bytes2int32(memory.bytes[addr:addr+4]), 0.0)
-//             elif 0x35 == opcode:  # i64.load32_u
-//                 res = (I64, bytes2uint32(memory.bytes[addr:addr+4]), 0.0)
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             sp += 1
-//             stack[sp] = res
+        else if (0x28 <= opcode && opcode <= 0x35) {
+            var flags = read_LEB(code, pc, 32, null);
+            pc = flags[0];
+            var offset = read_LEB(code, pc, 32, null);
+            pc = offset[0];
+            var addr_val = stack[sp];
+            sp -= 1;
+            if (flags[1] != 2) {
+                if (TRACE) {
+                    info("      - unaligned load - flags: 0x" + flags[1].format("%x") +
+                         ", offset: 0x" + offset[1].format("%x") + ", addr: 0x" + addr_val[1].format("%x"));
+                }
+            }
+            var addr = addr_val[1] + offset[1];
+            if (bound_violation(opcode, addr, memory.pages)) {
+                throw new WAException("out of bounds memory access");
+            }
+            assert(addr >= 0, null);
+            var res;
+            if (opcode == 0x28) {  // i32.load
+                res = [I32, bytes2uint32(memory.bytes.slice(addr, addr+4)), 0.0];
+            } else if (opcode == 0x29) {  // i64.load
+                res = [I64, bytes2uint64(memory.bytes.slice(addr, addr+8)), 0.0];
+            } else if (opcode == 0x2a) {  // f32.load
+                res = [F32, 0, read_F32(memory.bytes, addr)];
+            } else if (opcode == 0x2b) {  // f64.load
+                res = [F64, 0, read_F64(memory.bytes, addr)];
+            } else if (opcode == 0x2c) {  // i32.load8_s
+                res = [I32, bytes2int8(memory.bytes.slice(addr, addr+1)), 0.0];
+            } else if (opcode == 0x2d) {  // i32.load8_u
+                res = [I32, memory.bytes[addr], 0.0];
+            } else if (opcode == 0x2e) {  // i32.load16_s
+                res = [I32, bytes2int16(memory.bytes.slice(addr, addr+2)), 0.0];
+            } else if (opcode == 0x2f) {  // i32.load16_u
+                res = [I32, bytes2uint16(memory.bytes.slice(addr, addr+2)), 0.0];
+            } else if (opcode == 0x30) {  // i64.load8_s
+                res = [I64, bytes2int8(memory.bytes.slice(addr, addr+1)), 0.0];
+            } else if (opcode == 0x31) {  // i64.load8_u
+                res = [I64, memory.bytes[addr], 0.0];
+            } else if (opcode == 0x32) {  // i64.load16_s
+                res = [I64, bytes2int16(memory.bytes.slice(addr, addr+2)), 0.0];
+            } else if (opcode == 0x33) {  // i64.load16_u
+                res = [I64, bytes2uint16(memory.bytes.slice(addr, addr+2)), 0.0];
+            } else if (opcode == 0x34) {  // i64.load32_s
+                res = [I64, bytes2int32(memory.bytes.slice(addr, addr+4)), 0.0];
+            } else if (opcode == 0x35) {  // i64.load32_u
+                res = [I64, bytes2uint32(memory.bytes.slice(addr, addr+4)), 0.0];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
 
-//         # Memory store operators
-//         elif 0x36 <= opcode <= 0x3e:
-//             pc, flags = read_LEB(code, pc,  32, null)
-//             pc, offset = read_LEB(code, pc,  32, null)
-//             val = stack[sp]
-//             sp -= 1
-//             addr_val = stack[sp]
-//             sp -= 1
-//             if flags != 2:
-//                 if TRACE:
-//                     info("      - unaligned store - flags: 0x%x,"
-//                          " offset: 0x%x, addr: 0x%x, val: 0x%x" % (
-//                              flags, offset, addr_val[1], val[1]))
-//             addr = addr_val[1] + offset
-//             if bound_violation(opcode, addr, memory.pages):
-//                 raise WAException("out of bounds memory access")
-//             assert addr >= 0
-//             if   0x36 == opcode:  # i32.store
-//                 write_I32(memory.bytes, addr, val[1])
-//             elif 0x37 == opcode:  # i64.store
-//                 write_I64(memory.bytes, addr, val[1])
-//             elif 0x38 == opcode:  # f32.store
-//                 write_F32(memory.bytes, addr, val[2])
-//             elif 0x39 == opcode:  # f64.store
-//                 write_F64(memory.bytes, addr, val[2])
-//             elif 0x3a == opcode:  # i32.store8
-//                 memory.bytes[addr] = val[1] & 0xff
-//             elif 0x3b == opcode:  # i32.store16
-//                 memory.bytes[addr]   =  val[1] & 0x00ff
-//                 memory.bytes[addr+1] = (val[1] & 0xff00)>>8
-//             elif 0x3c == opcode:  # i64.store8
-//                 memory.bytes[addr]   =  val[1] & 0xff
-//             elif 0x3d == opcode:  # i64.store16
-//                 memory.bytes[addr]   =  val[1] & 0x00ff
-//                 memory.bytes[addr+1] = (val[1] & 0xff00)>>8
-//             elif 0x3e == opcode:  # i64.store32
-//                 memory.bytes[addr]   =  val[1] & 0x000000ff
-//                 memory.bytes[addr+1] = (val[1] & 0x0000ff00)>>8
-//                 memory.bytes[addr+2] = (val[1] & 0x00ff0000)>>16
-//                 memory.bytes[addr+3] = (val[1] & 0xff000000)>>24
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
+        // Memory store operators
+        else if (0x36 <= opcode && opcode <= 0x3e) {
+            var flags = read_LEB(code, pc, 32, null);
+            pc = flags[0];
+            var offset = read_LEB(code, pc, 32, null);
+            pc = offset[0];
+            var val = stack[sp];
+            sp -= 1;
+            var addr_val = stack[sp];
+            sp -= 1;
+            if (flags[1] != 2) {
+                if (TRACE) {
+                    info("      - unaligned store - flags: 0x" + flags[1].format("%x") +
+                         ", offset: 0x" + offset[1].format("%x") + ", addr: 0x" + addr_val[1].format("%x") +
+                         ", val: 0x" + val[1].format("%x"));
+                }
+            }
+            var addr = addr_val[1] + offset[1];
+            if (bound_violation(opcode, addr, memory.pages)) {
+                throw new WAException("out of bounds memory access");
+            }
+            assert(addr >= 0, null);
+            if (opcode == 0x36) {  // i32.store
+                write_I32(memory.bytes, addr, val[1]);
+            } else if (opcode == 0x37) {  // i64.store
+                write_I64(memory.bytes, addr, val[1]);
+            } else if (opcode == 0x38) {  // f32.store
+                write_F32(memory.bytes, addr, val[2]);
+            } else if (opcode == 0x39) {  // f64.store
+                write_F64(memory.bytes, addr, val[2]);
+            } else if (opcode == 0x3a) {  // i32.store8
+                memory.bytes[addr] = val[1] & 0xff;
+            } else if (opcode == 0x3b) {  // i32.store16
+                memory.bytes[addr] = val[1] & 0x00ff;
+                memory.bytes[addr+1] = (val[1] & 0xff00) >> 8;
+            } else if (opcode == 0x3c) {  // i64.store8
+                memory.bytes[addr] = val[1] & 0xff;
+            } else if (opcode == 0x3d) {  // i64.store16
+                memory.bytes[addr] = val[1] & 0x00ff;
+                memory.bytes[addr+1] = (val[1] & 0xff00) >> 8;
+            } else if (opcode == 0x3e) {  // i64.store32
+                memory.bytes[addr] = val[1] & 0x000000ff;
+                memory.bytes[addr+1] = (val[1] & 0x0000ff00) >> 8;
+                memory.bytes[addr+2] = (val[1] & 0x00ff0000) >> 16;
+                memory.bytes[addr+3] = (val[1] & 0xff000000) >> 24;
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+        }
 
-//         # Memory size operators
-//         elif 0x3f == opcode:  # current_memory
-//             pc, reserved = read_LEB(code, pc,  1, null)
-//             sp += 1
-//             stack[sp] = (I32, module_.memory.pages, 0.0)
-//             if TRACE:
-//                 debug("      - current 0x%x" % module_.memory.pages)
-//         elif 0x40 == opcode:  # grow_memory
-//             pc, reserved = read_LEB(code, pc,  1, null)
-//             prev_size = module_.memory.pages
-//             delta = stack[sp][1]  # I32
-//             module_.memory.grow(delta)
-//             stack[sp] = (I32, prev_size, 0.0)
-//             debug("      - delta 0x%x, prev: 0x%x" % (
-//                 delta, prev_size))
+        // Memory size operators
+        else if (opcode == 0x3f) {  // current_memory
+            var reserved = read_LEB(code, pc, 1, null);
+            pc = reserved[0];
+            sp += 1;
+            stack[sp] = [I32, module_.memory.pages, 0.0];
+            if (TRACE) {
+                debug("      - current 0x" + module_.memory.pages.format("%x"));
+            }
+        } else if (opcode == 0x40) {  // grow_memory
+            var reserved = read_LEB(code, pc, 1, null);
+            pc = reserved[0];
+            var prev_size = module_.memory.pages;
+            var delta = stack[sp][1];  // I32
+            module_.memory.grow(delta);
+            stack[sp] = [I32, prev_size, 0.0];
+            debug("      - delta 0x" + delta.format("%x") + ", prev: 0x" + prev_size.format("%x"));
+        }
 
-//         #
-//         # Constants
-//         #
-//         elif 0x41 == opcode:  # i32.const
-//             pc, val = read_LEB(code, pc, 32, signed=True)
-//             sp += 1
-//             stack[sp] = (I32, val, 0.0)
-//             if TRACE: debug("      - %s" % value_repr(stack[sp]))
-//         elif 0x42 == opcode:  # i64.const
-//             pc, val = read_LEB(code, pc, 64, signed=True)
-//             sp += 1
-//             stack[sp] = (I64, val, 0.0)
-//             if TRACE: debug("      - %s" % value_repr(stack[sp]))
-//         elif 0x43 == opcode:  # f32.const
-//             sp += 1
-//             stack[sp] = (F32, 0, read_F32(code, pc))
-//             pc += 4
-//             if TRACE: debug("      - %s" % value_repr(stack[sp]))
-//         elif 0x44 == opcode:  # f64.const
-//             sp += 1
-//             stack[sp] = (F64, 0, read_F64(code, pc))
-//             pc += 8
-//             if TRACE: debug("      - %s" % value_repr(stack[sp]))
 
-//         #
-//         # Comparison operators
-//         #
+        //
+        // Constants
+        //
+        else if (opcode == 0x41) {  // i32.const
+            var result = read_LEB(code, pc, 32, true);
+            pc = result[0];
+            var val = result[1];
+            sp += 1;
+            stack[sp] = [I32, val, 0.0];
+            if (TRACE) {
+                debug("      - " + value_repr(stack[sp]));
+            }
+        } else if (opcode == 0x42) {  // i64.const
+            var result = read_LEB(code, pc, 64, true);
+            pc = result[0];
+            var val = result[1];
+            sp += 1;
+            stack[sp] = [I64, val, 0.0];
+            if (TRACE) {
+                debug("      - " + value_repr(stack[sp]));
+            }
+        } else if (opcode == 0x43) {  // f32.const
+            sp += 1;
+            stack[sp] = [F32, 0, read_F32(code, pc)];
+            pc += 4;
+            if (TRACE) {
+                debug("      - " + value_repr(stack[sp]));
+            }
+        } else if (opcode == 0x44) {  // f64.const
+            sp += 1;
+            stack[sp] = [F64, 0, read_F64(code, pc)];
+            pc += 8;
+            if (TRACE) {
+                debug("      - " + value_repr(stack[sp]));
+            }
+        }
 
-//         # unary
-//         elif opcode in [0x45, 0x50]:
-//             a = stack[sp]
-//             sp -= 1
-//             if   0x45 == opcode: # i32.eqz
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (I32, a[1] == 0, 0.0)
-//             elif 0x50 == opcode: # i64.eqz
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (I32, a[1] == 0, 0.0)
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s) = %s" % (
-//                     value_repr(a), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
+        //
+        // Comparison operators
+        //
 
-//         # binary
-//         elif 0x46 <= opcode <= 0x66:
-//             a, b = stack[sp-1], stack[sp]
-//             sp -= 2
-//             if   0x46 == opcode: # i32.eq
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, a[1] == b[1], 0.0)
-//             elif 0x47 == opcode: # i32.ne
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, a[1] != b[1], 0.0)
-//             elif 0x48 == opcode: # i32.lt_s
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, int2int32(a[1]) < int2int32(b[1]), 0.0)
-//             elif 0x49 == opcode: # i32.lt_u
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, int2uint32(a[1]) < int2uint32(b[1]), 0.0)
-//             elif 0x4a == opcode: # i32.gt_s
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, int2int32(a[1]) > int2int32(b[1]), 0.0)
-//             elif 0x4b == opcode: # i32.gt_u
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, int2uint32(a[1]) > int2uint32(b[1]), 0.0)
-//             elif 0x4c == opcode: # i32.le_s
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, int2int32(a[1]) <= int2int32(b[1]), 0.0)
-//             elif 0x4d == opcode: # i32.le_u
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, int2uint32(a[1]) <= int2uint32(b[1]), 0.0)
-//             elif 0x4e == opcode: # i32.ge_s
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, int2int32(a[1]) >= int2int32(b[1]), 0.0)
-//             elif 0x4f == opcode: # i32.ge_u
-//                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-//                 res = (I32, int2uint32(a[1]) >= int2uint32(b[1]), 0.0)
-//             elif 0x51 == opcode: # i64.eq
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, a[1] == b[1], 0.0)
-//             elif 0x52 == opcode: # i64.ne
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, a[1] != b[1], 0.0)
-//             elif 0x53 == opcode: # i64.lt_s
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, int2int64(a[1]) < int2int64(b[1]), 0.0)
-//             elif 0x54 == opcode: # i64.lt_u
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, int2uint64(a[1]) < int2uint64(b[1]), 0.0)
-//             elif 0x55 == opcode: # i64.gt_s
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, int2int64(a[1]) > int2int64(b[1]), 0.0)
-//             elif 0x56 == opcode: # i64.gt_u
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, int2uint64(a[1]) > int2uint64(b[1]), 0.0)
-//             elif 0x57 == opcode: # i64.le_s
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, int2int64(a[1]) <= int2int64(b[1]), 0.0)
-//             elif 0x58 == opcode: # i64.le_u
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, int2uint64(a[1]) <= int2uint64(b[1]), 0.0)
-//             elif 0x59 == opcode: # i64.ge_s
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, int2int64(a[1]) >= int2int64(b[1]), 0.0)
-//             elif 0x5a == opcode: # i64.ge_u
-//                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-//                 res = (I32, int2uint64(a[1]) >= int2uint64(b[1]), 0.0)
-//             elif 0x5b == opcode: # f32.eq
-//                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-//                 res = (I32, a[2] == b[2], 0.0)
-//             elif 0x5c == opcode: # f32.ne
-//                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-//                 res = (I32, a[2] != b[2], 0.0)
-//             elif 0x5d == opcode: # f32.lt
-//                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-//                 res = (I32, a[2] < b[2], 0.0)
-//             elif 0x5e == opcode: # f32.gt
-//                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-//                 res = (I32, a[2] > b[2], 0.0)
-//             elif 0x5f == opcode: # f32.le
-//                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-//                 res = (I32, a[2] <= b[2], 0.0)
-//             elif 0x60 == opcode: # f32.ge
-//                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-//                 res = (I32, a[2] >= b[2], 0.0)
-//             elif 0x61 == opcode: # f64.eq
-//                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-//                 res = (I32, a[2] == b[2], 0.0)
-//             elif 0x62 == opcode: # f64.ne
-//                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-//                 res = (I32, a[2] != b[2], 0.0)
-//             elif 0x63 == opcode: # f64.lt
-//                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-//                 res = (I32, a[2] < b[2], 0.0)
-//             elif 0x64 == opcode: # f64.gt
-//                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-//                 res = (I32, a[2] > b[2], 0.0)
-//             elif 0x65 == opcode: # f64.le
-//                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-//                 res = (I32, a[2] <= b[2], 0.0)
-//             elif 0x66 == opcode: # f64.ge
-//                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-//                 res = (I32, a[2] >= b[2], 0.0)
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s, %s) = %s" % (
-//                     value_repr(a), value_repr(b), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
+        // unary
+       else if (opcode == 0x45 || opcode == 0x50) {
+            var a = stack[sp];
+            sp -= 1;
+            var res;
+            if (opcode == 0x45) { // i32.eqz
+                if (VALIDATE) {
+                    assert(a[0] == I32, "Expected I32");
+                }
+                res = [I32, a[1] == 0 ? 1 : 0, 0.0];
+            } else { // i64.eqz
+                if (VALIDATE) {
+                    assert(a[0] == I64, "Expected I64");
+                }
+                res = [I32, a[1] == 0 ? 1 : 0, 0.0];
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
+        // binary
+        else if (0x46 <= opcode && opcode <= 0x66) {
+            var a = stack[sp-1];
+            var b = stack[sp];
+            sp -= 2;
+            var res;
+            if (0x46 == opcode) { // i32.eq
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, a[1] == b[1] ? 1 : 0, 0.0];
+            } else if (0x47 == opcode) { // i32.ne
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, a[1] != b[1] ? 1 : 0, 0.0];
+            } else if (0x48 == opcode) { // i32.lt_s
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, int2int32(a[1]) < int2int32(b[1]) ? 1 : 0, 0.0];
+            } else if (0x49 == opcode) { // i32.lt_u
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, int2uint32(a[1]) < int2uint32(b[1]) ? 1 : 0, 0.0];
+            } else if (0x4a == opcode) { // i32.gt_s
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, int2int32(a[1]) > int2int32(b[1]) ? 1 : 0, 0.0];
+            } else if (0x4b == opcode) { // i32.gt_u
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, int2uint32(a[1]) > int2uint32(b[1]) ? 1 : 0, 0.0];
+            } else if (0x4c == opcode) { // i32.le_s
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, int2int32(a[1]) <= int2int32(b[1]) ? 1 : 0, 0.0];
+            } else if (0x4d == opcode) { // i32.le_u
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, int2uint32(a[1]) <= int2uint32(b[1]) ? 1 : 0, 0.0];
+            } else if (0x4e == opcode) { // i32.ge_s
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, int2int32(a[1]) >= int2int32(b[1]) ? 1 : 0, 0.0];
+            } else if (0x4f == opcode) { // i32.ge_u
+                if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
+                res = [I32, int2uint32(a[1]) >= int2uint32(b[1]) ? 1 : 0, 0.0];
+            } else if (0x51 == opcode) { // i64.eq
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, a[1] == b[1] ? 1 : 0, 0.0];
+            } else if (0x52 == opcode) { // i64.ne
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, a[1] != b[1] ? 1 : 0, 0.0];
+            } else if (0x53 == opcode) { // i64.lt_s
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, int2int64(a[1]) < int2int64(b[1]) ? 1 : 0, 0.0];
+            } else if (0x54 == opcode) { // i64.lt_u
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, int2uint64(a[1]) < int2uint64(b[1]) ? 1 : 0, 0.0];
+            } else if (0x55 == opcode) { // i64.gt_s
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, int2int64(a[1]) > int2int64(b[1]) ? 1 : 0, 0.0];
+            } else if (0x56 == opcode) { // i64.gt_u
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, int2uint64(a[1]) > int2uint64(b[1]) ? 1 : 0, 0.0];
+            } else if (0x57 == opcode) { // i64.le_s
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, int2int64(a[1]) <= int2int64(b[1]) ? 1 : 0, 0.0];
+            } else if (0x58 == opcode) { // i64.le_u
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, int2uint64(a[1]) <= int2uint64(b[1]) ? 1 : 0, 0.0];
+            } else if (0x59 == opcode) { // i64.ge_s
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, int2int64(a[1]) >= int2int64(b[1]) ? 1 : 0, 0.0];
+            } else if (0x5a == opcode) { // i64.ge_u
+                if (VALIDATE) { assert(a[0] == I64 && b[0] == I64, null); }
+                res = [I32, int2uint64(a[1]) >= int2uint64(b[1]) ? 1 : 0, 0.0];
+            } else if (0x5b == opcode) { // f32.eq
+                if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
+                res = [I32, a[2] == b[2] ? 1 : 0, 0.0];
+            } else if (0x5c == opcode) { // f32.ne
+                if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
+                res = [I32, a[2] != b[2] ? 1 : 0, 0.0];
+            } else if (0x5d == opcode) { // f32.lt
+                if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
+                res = [I32, a[2] < b[2] ? 1 : 0, 0.0];
+            } else if (0x5e == opcode) { // f32.gt
+                if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
+                res = [I32, a[2] > b[2] ? 1 : 0, 0.0];
+            } else if (0x5f == opcode) { // f32.le
+                if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
+                res = [I32, a[2] <= b[2] ? 1 : 0, 0.0];
+            } else if (0x60 == opcode) { // f32.ge
+                if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
+                res = [I32, a[2] >= b[2] ? 1 : 0, 0.0];
+            } else if (0x61 == opcode) { // f64.eq
+                if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
+                res = [I32, a[2] == b[2] ? 1 : 0, 0.0];
+            } else if (0x62 == opcode) { // f64.ne
+                if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
+                res = [I32, a[2] != b[2] ? 1 : 0, 0.0];
+            } else if (0x63 == opcode) { // f64.lt
+                if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
+                res = [I32, a[2] < b[2] ? 1 : 0, 0.0];
+            } else if (0x64 == opcode) { // f64.gt
+                if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
+                res = [I32, a[2] > b[2] ? 1 : 0, 0.0];
+            } else if (0x65 == opcode) { // f64.le
+                if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
+                res = [I32, a[2] <= b[2] ? 1 : 0, 0.0];
+            } else if (0x66 == opcode) { // f64.ge
+                if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
+                res = [I32, a[2] >= b[2] ? 1 : 0, 0.0];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
 
 //         #
 //         # Numeric operators
@@ -2258,7 +2333,7 @@ function interpretMvp(module_,
 //             sp += 1
 //             stack[sp] = res
         else {
-            throw new WAException("unrecognized opcode 0x" + opcode.format("%x"));
+            throw new WAException("unrecognized opcode 0x" + opcode.format("%02x") + " (" + OPERATOR_INFO[opcode][0] + ")");
         }
     }
 
@@ -2427,11 +2502,11 @@ class Module {
     private var data as ByteArray;
     private var rdr as Reader;
     // private var importValue as ImportMethodType;
-    private var importFunction as ImportFunctionType;
+    var importFunction as ImportFunctionType;
 
     // Sections
     private var type as Array<Type>;
-    private var importList as Array<Import>;
+    private var import_list as Array<Import>;
     var function_ as Array<Function>;
     // private var fnImportCnt as Number;
     private var table as Dictionary<Number, Array<Number>>;
@@ -2439,10 +2514,10 @@ class Module {
     private var exportMap as Dictionary<String, Export>;
     private var globalList as Array<Global>;
 
-    private var memory as Memory;
+    public var memory as Memory;
 
     // // block/loop/if blocks {start addr: Block, ...}
-    private var blockMap as Dictionary<Number, Block>;
+    private var block_map as Dictionary<Number, Block>;
 
     // Execution state
     var sp as Number;
@@ -2450,8 +2525,6 @@ class Module {
     var stack as StackType;
     private var csp as Number;
     private var callstack as CallStackType;
-    private var startFunction as Number;
-
     public var start_function as Number = -1;
     
     public function initialize(
@@ -2465,7 +2538,8 @@ class Module {
             tables as Dictionary<Number, Array<Number>>,
             globals as Array<Global>,
             exports as Array<Export>,
-            exportMap as Dictionary<String, Export>
+            exportMap as Dictionary<String, Export>,
+            blockMap as Dictionary<Number, Block>
             ) {
         self.data = data;
         self.rdr = new Reader(data);
@@ -2474,7 +2548,7 @@ class Module {
 
         // Initialize sections
         self.type = types;
-        self.importList = [];
+        self.import_list = []; // not implemented (doesn't seem nessasary)
         self.function_ = functions;
         // self.fnImportCnt = 0;
         self.table = tables;//{ANYFUNC => []};
@@ -2488,7 +2562,7 @@ class Module {
             self.memory = new Memory(1);  // default to 1 page
         }
 
-        self.blockMap = {};
+        self.block_map = blockMap;
 
         // Initialize execution state
         self.sp = -1;
@@ -2498,31 +2572,31 @@ class Module {
             self.stack[i] = [0x00, 0, 0.0];
         }
         self.csp = -1;
-        var block = new Block(0x00, BLOCK_TYPE[I32], 0);
+        var block = new Block(0x00, BLOCK_TYPE[I32], 0, 0, 0, 0);
         self.callstack = new [CALLSTACK_SIZE];
         for (var i = 0; i < CALLSTACK_SIZE; i++) {
             self.callstack[i] = [block, -1, -1, 0];
         }
-        self.startFunction = -1;
+        self.start_function = -1;
 
         // readMagic();
         // readVersion();
         // readSections();
 
-        dump();
+        // dump();
 
         // // Run the start function if set
-        // if (self.startFunction >= 0) {
-        //     var fidx = self.startFunction;
+        // if (self.start_function >= 0) {
+        //     var fidx = self.start_function;
         //     var func = self.function_[fidx];
         //     System.println("Running start function 0x" + fidx.format("%x"));
         //     if (TRACE) {
-        //         dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+        //         dump_stacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
         //     }
         //     if (func instanceof FunctionImport) {
-        //         sp = doCallImport(self.stack, self.sp, self.memory, self.importFunction, func);
+        //         sp = do_callImport(self.stack, self.sp, self.memory, self.importFunction, func);
         //     } else if (func instanceof Function) {
-        //         var result = doCall(self.stack, self.callstack, self.sp, self.fp, self.csp, func, self.rdr.bytes.size());
+        //         var result = do_call(self.stack, self.callstack, self.sp, self.fp, self.csp, func, self.rdr.bytes.size());
         //         self.rdr.pos = result[0];
         //         self.sp = result[1];
         //         self.fp = result[2];
@@ -2542,8 +2616,8 @@ class Module {
         }
 
         info("Imports:");
-        for (var i = 0; i < self.importList.size(); i++) {
-            var imp = self.importList[i];
+        for (var i = 0; i < self.import_list.size(); i++) {
+            var imp = self.import_list[i];
             if (imp.kind == 0x0) {  // Function
                 info("  0x" + i.format("%x") + " [type: " + imp.type + ", '" + imp.module_ + "." + imp.field + "', kind: " + 
                       EXTERNAL_KIND_NAMES[imp.kind] + " (" + imp.kind + ")]");
@@ -2599,13 +2673,13 @@ class Module {
         }
         info("");
 
-        var blockKeys = self.blockMap.keys();
+        var blockKeys = self.block_map.keys();
         blockKeys.sort(null);
         var blockMapStrings = [];
         for (var i = 0; i < blockKeys.size(); i++) {
             var k = blockKeys[i];
-            var bl = self.blockMap[k];
-            blockMapStrings.add(blockRepr(bl) + "[0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]");
+            var bl = self.block_map[k];
+            blockMapStrings.add("'" + blockRepr(bl) + "' [0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]'");
         }
         info("block_map: [" + join(blockMapStrings, ", ") + "]");
         info("");
@@ -2616,10 +2690,10 @@ class Module {
     }
 
     public function interpret() as Void {
-        var result = interpretMvp(self,
+        var result = interpret_mvp(self,
             // Greens
             self.rdr.pos, self.rdr.bytes, self.function_,
-            self.table, self.blockMap,
+            self.table, self.block_map,
             // Reds
             self.memory, self.sp, self.stack, self.fp, self.csp,
             self.callstack);
@@ -2630,19 +2704,69 @@ class Module {
         self.csp = result[3];
     }
 
-    public function run(fname as String, args as Array<Array<Number>>) as Number | ValueTupleType {
+    public function runCatchTrap(fname as String, args as Array<Array<Number>>) as ValueTupleType or WAException {
+        try {
+            var printReturn = false;
+            var returnValue = true;
+            return self.runWithArgs(fname, args, printReturn, returnValue) as ValueTupleType;
+        } catch (e instanceof WAException) {
+            return e;
+        }        
+    }
+
+    public function run(fname as String, args as Array<Array<Number>>) as ValueTupleType {
         var printReturn = false;
         var returnValue = true;
         return self.runWithArgs(fname, args, printReturn, returnValue);
     }
 
-    public function runWithArgs(fname as String, args as Array<Array<Number>>, printReturn as Boolean, returnValue as Boolean) as Number | ValueTupleType {
+    // dont really want to start it immediately when creating the module
+    // but we need to set the start function somewhere
+    public function runStartFunction() as ValueTupleType {
+        // Run the start function if set
+        if (self.start_function >= 0) {
+            var fidx = self.start_function;
+            var func = self.function_[fidx];
+            info(Lang.format("Running start function 0x$1$", [fidx.format("%x")]));
+            if (TRACE) {
+                dump_stacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+            }
+            if (func instanceof FunctionImport) {
+                self.sp = do_callImport(self.stack, self.sp, self.memory, self.import_function, func);
+            } else if (func instanceof Function) {
+                var result = do_call(self.stack, self.callstack, self.sp, self.fp, self.csp, func, self.rdr.bytes.size(), false);
+                self.rdr.pos = result[0];
+                self.sp = result[1];
+                self.fp = result[2];
+                self.csp = result[3];
+            }
+            self.interpret();
+
+
+
+            if (TRACE) {
+                dump_stacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+            }
+            var targs = [];
+            if (self.sp >= 0) {
+                var ret = self.stack[self.sp];
+                self.sp--;
+                System.println("Start function: (" + Lang.format("$1$", [join(targs, ", ")]) + ") = " + value_repr(ret));
+                return ret;
+            } else {
+                System.println("Start function:" + "(" + Lang.format("$1$", [join(targs, ", ")]) + ")");
+            }
+            return 0;
+        }
+    }
+
+    public function runWithArgs(fname as String?, args as Array<Array<Number>>, printReturn as Boolean, returnValue as Boolean) as Number | ValueTupleType {
         // Reset stacks
         self.sp = -1;
         self.fp = -1;
         self.csp = -1;
 
-        var fidx = self.exportMap[fname].index;
+        var fidx = fname != null ? self.exportMap[fname].index : self.start_function;
 
         // Check arg type
         var tparams = self.function_[fidx].type.params;
@@ -2659,9 +2783,9 @@ class Module {
 
         System.println("Running function '" + fname + "' (0x" + fidx.format("%x") + ")");
         if (TRACE) {
-            dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+            dump_stacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
         }
-        var result = doCall(self.stack, self.callstack, self.sp, self.fp, self.csp, self.function_[fidx], 0, false);
+        var result = do_call(self.stack, self.callstack, self.sp, self.fp, self.csp, self.function_[fidx], 0, false);
         self.rdr.pos = result[0];
         self.sp = result[1];
         self.fp = result[2];
@@ -2669,7 +2793,7 @@ class Module {
 
         interpret();
         if (TRACE) {
-            dumpStacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+            dump_stacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
         }
         var targs = [];
         for (var i = 0; i < args.size(); i++) {
@@ -2788,15 +2912,25 @@ class Module {
 //     # or becoming negative
 //     return [(I32, int(time.time()*1000 - 0x38640900), 0.0)]
 
-// def host_putchar(mem, args):
-//     assert len(args) == 1
-//     assert args[0][0] == I32
-//     char_code = args[0][1]
-//     os.write(1, bytes([char_code]))
-//     return [(I32, char_code, 0.0)]
+var host_output = "";
+function host_putchar(mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>> {
+    if (args.size() != 1) {
+        throw new WAException("Invalid number of arguments");
+    }
+    
+    if (args[0][0] != I32) {
+        throw new WAException("Invalid argument type");
+    }
+    var charCode = args[0][1];
+    // System.println("host_putchar: " + charCode);
+    // System.print(charCode.toChar().toString());
+    host_output += charCode.toChar().toString();
+    return [[I32, charCode, 0.0]];
+}
 
-// def import_function(module, field, mem, args):
-//     fname = "%s.%s" % (module, field)
+
+function import_function(module_ as Module, field as String, mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>> {
+    var fname = module_ + "." + field;
 //     if fname in ["spectest.print", "spectest.print_i32"]:
 //         return spectest_print(mem, args)
 //     elif fname == "env.printline":
@@ -2809,10 +2943,12 @@ class Module {
 //         return env_get_time_ms(mem, args)
 //     elif fname == "env.exit":
 //         raise ExitException(args[0][1])
-//     elif fname == "host.putchar":
-//         return host_putchar(mem, args)
-//     else:
-//         raise Exception("function import %s not found" % (fname))
+    if (fname.equals("host.putchar")) {
+        return host_putchar(mem, args);
+    } else {
+        throw new WAException("function import " + fname + " not found");
+    }
+}
 
 // def parse_command(module, args):
 //     fname = args[0]

@@ -179,12 +179,10 @@ def create_monkeyc_test(wast_name, module_index, assertion_index, assertion, sou
     (:test)
     static function {test_name}(logger as Test.Logger) as Boolean {{
         // Test from {source_filename}:{assertion['line']}
-        // Field: {function_name}
-        // Expected type: {expected_type}
         var m = {factory_name}.createModule();
-        var result = m.run("{function_name}", [{', '.join(args)}]);
+        var result = m.runCatchTrap("{function_name}", [{', '.join(args)}]);
 
-        logger.debug("Result = " + result);
+        // logger.debug("Result = " + result);
         {assertion_check}
     }}
 """

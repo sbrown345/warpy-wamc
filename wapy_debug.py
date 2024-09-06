@@ -3,12 +3,12 @@
 INFO  = False   # informational logging
 TRACE = False   # trace instructions/stacks
 DEBUG = False   # verbose logging
-# INFO  = True    # informational logging
-# TRACE = True    # trace instructions/stacks
-# DEBUG = True    # verbose logging
+INFO  = True    # informational logging
+TRACE = True    # trace instructions/stacks
+DEBUG = True    # verbose logging
 VALIDATE= True
 
-import sys, os, math, time, re
+import sys, os, math, time
 
 sys.path.append(os.path.abspath('./pypy2-v5.6.0-src'))
 
@@ -99,10 +99,10 @@ class FunctionImport(Code):
         self.module = module
         self.field = field
         fname = "%s.%s" % (module, field)
-        # if not fname in ["spectest.print", "spectest.print_i32",
-        #         "env.printline", "env.readline", "env.read_file",
-        #         "env.get_time_ms", "env.exit", "host.putchar"]:
-        #     raise Exception("function import %s not found" % (fname))
+        if not fname in ["spectest.print", "spectest.print_i32",
+                "env.printline", "env.readline", "env.read_file",
+                "env.get_time_ms", "env.exit", "host.putchar"]:
+            raise Exception("function import %s not found" % (fname))
 
 
 ######################################
@@ -390,13 +390,6 @@ OPERATOR_INFO = {
         0xbd : ['i64.reinterpret_f64', ''],
         0xbe : ['f32.reinterpret_i32', ''],
         0xbf : ['f64.reinterpret_i64', ''],
-        
-        # Additional opcodes (0xc0 and above)
-        0xc0 : ['i32.extend8_s',  ''],
-        0xc1 : ['i32.extend16_s', ''],
-        0xc2 : ['i64.extend8_s',  ''],
-        0xc3 : ['i64.extend16_s', ''],
-        0xc4 : ['i64.extend32_s', ''],
         }
 
 LOAD_SIZE = { 0x28 : 4,
@@ -652,20 +645,36 @@ def write_F64(bytes, pos, fval):
     ival = intmask(pack_f64(fval))
     bytes[pos:pos+8] = uint642bytes(ival)
 
-
 def value_repr(val):
-    vt, ival, fval = val
-    vtn = VALUE_TYPE[vt]
-    if   vtn in ('i32', 'i64'):
-        return "%s:%s" % (hex(ival), vtn)
-    elif vtn in ('f32', 'f64'):
-        str = "%.7g" % fval
-        if str.find('.') < 0:
-            return "%f:%s" % (fval, vtn)
+    try:
+        vt, ival, fval = val
+        vtn = VALUE_TYPE[vt]
+        if vtn in ('i32', 'i64'):
+            if isinstance(ival, float):
+                raise Exception(f"Float detected in integer value: {ival}")
+            return "%s:%s" % (hex(int(ival)), vtn)
+        elif vtn in ('f32', 'f64'):
+            str = "%.7g" % fval
+            if str.find('.') < 0:
+                return "%f:%s" % (fval, vtn)
+            else:
+                return "%s:%s" % (str, vtn)
         else:
-            return "%s:%s" % (str, vtn)
-    else:
-        raise Exception("unknown value type %s" % vtn)
+            raise Exception("unknown value type %s" % vtn)
+    except TypeError as e:
+        print("TypeError in value_repr:")
+        print("val:", val)
+        print("Type of val:", type(val))
+        if isinstance(val, tuple):
+            print("Length of val tuple:", len(val))
+            for i, item in enumerate(val):
+                print(f"Item {i}: {item} (type: {type(item)})")
+        raise e
+    except Exception as e:
+        print("Unexpected error in value_repr:")
+        print("val:", val)
+        print("Type of val:", type(val))
+        raise e
 
 def type_repr(t):
     return "<index: %s, form: %s, params: %s, results: %s, mask: %s>" % (
@@ -728,10 +737,7 @@ def skip_immediates(code, pos):
     opcode = code[pos]
     pos += 1
     vals = []
-    if opcode in OPERATOR_INFO:
-        imtype = OPERATOR_INFO[opcode][1]
-    else:
-        raise ValueError(f"Unknown opcode: {opcode} (0x{opcode:02x})")
+    imtype = OPERATOR_INFO[opcode][1]
     if   'varuint1' == imtype:
         pos, v = read_LEB(code, pos, 1)
         vals.append(v)
@@ -780,7 +786,7 @@ def skip_immediates(code, pos):
         raise Exception("unknown immediate type %s" % imtype)
     return pos, vals
 
-def find_blocks(code, start, end, block_map, block_map_type_idx):
+def find_blocks(code, start, end, block_map):
     pos = start
 
     # stack of blocks with current at top: (opcode, pos) tuples
@@ -799,7 +805,6 @@ def find_blocks(code, start, end, block_map, block_map_type_idx):
             block = Block(opcode, BLOCK_TYPE[code[pos+1]], pos)
             opstack.append(block)
             block_map[pos] = block
-            block_map_type_idx[pos] = code[pos+1]
         elif 0x05 == opcode:  # mark else positions
             assert opstack[-1].kind == 0x04, "else not matched with if"
             opstack[-1].else_addr = pos+1
@@ -816,7 +821,7 @@ def find_blocks(code, start, end, block_map, block_map_type_idx):
     assert len(opstack) == 0, "function ended in middle of block"
 
     #debug("block_map: %s" % block_map)
-    return block_map, block_map_type_idx
+    return block_map
 
 def pop_block(stack, callstack, sp, fp, csp):
     block, orig_sp, orig_fp, ra = callstack[csp]
@@ -1210,6 +1215,8 @@ def interpret_mvp(module,
                     OPERATOR_INFO[opcode][0], opcode))
             sp += 1
             stack[sp] = res
+            if TRACE:
+                debug(f"Memory load: addr={addr}, value={value_repr(res)}")
 
         # Memory store operators
         elif 0x36 <= opcode <= 0x3e:
@@ -1254,6 +1261,8 @@ def interpret_mvp(module,
             else:
                 raise WAException("%s(0x%x) unimplemented" % (
                     OPERATOR_INFO[opcode][0], opcode))
+            if TRACE:
+                debug(f"Memory store: addr={addr}, value={value_repr(val)}")
 
         # Memory size operators
         elif 0x3f == opcode:  # current_memory
@@ -1322,6 +1331,8 @@ def interpret_mvp(module,
         elif 0x46 <= opcode <= 0x66:
             a, b = stack[sp-1], stack[sp]
             sp -= 2
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x46 == opcode: # i32.eq
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
                 res = (I32, a[1] == b[1], 0.0)
@@ -1426,6 +1437,8 @@ def interpret_mvp(module,
                     value_repr(a), value_repr(b), value_repr(res)))
             sp += 1
             stack[sp] = res
+            if TRACE:
+                debug(f"Post-operation result: res={value_repr(res)}")
 
         #
         # Numeric operators
@@ -1452,6 +1465,8 @@ def interpret_mvp(module,
                 while count < 32 and (val % 2) == 0:
                     count += 1
                     val = val / 2
+                    if not isinstance(val, int):
+                        raise WAException("i32.ctz operation resulted in a non-integer valueuse `val = val // 2` ????")
                 res = (I32, count, 0.0)
             elif 0x69 == opcode: # i32.popcnt
                 if VALIDATE: assert a[0] == I32
@@ -1461,6 +1476,8 @@ def interpret_mvp(module,
                     if 0x1 & val:
                         count += 1
                     val = val / 2
+                    if not isinstance(val, int):
+                        raise WAException("i32.ctz operation resulted in a non-integer value.   use `val = val // 2` ????")
                 res = (I32, count, 0.0)
             elif 0x79 == opcode: # i64.clz
                 if VALIDATE: assert a[0] == I64
@@ -1562,6 +1579,8 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == I32 and b[0] == I32
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x6a == opcode: # i32.add
                 res = (I32, int2int32(a[1] + b[1]), 0.0)
             elif 0x6b == opcode: # i32.sub
@@ -1579,7 +1598,7 @@ def interpret_mvp(module,
                 if b[1] == 0:
                     raise WAException("integer divide by zero")
                 else:
-                    res = (I32, int2uint32(a[1]) / int2uint32(b[1]), 0.0)
+                    res = (I32, int(int2uint32(a[1]) // int2uint32(b[1])), 0.0)
             elif 0x6f == opcode: # i32.rem_s
                 if b[1] == 0:
                     raise WAException("integer divide by zero")
@@ -1612,6 +1631,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1620,6 +1640,8 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == I64 and b[0] == I64
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x7c == opcode: # i64.add
                 res = (I64, int2int64(a[1] + b[1]), 0.0)
             elif 0x7d == opcode: # i64.sub
@@ -1638,11 +1660,11 @@ def interpret_mvp(module,
                     raise WAException("integer divide by zero")
                 else:
                     if a[1] < 0 and b[1] > 0:
-                        res = (I64, int2uint64(-a[1]) / int2uint64(b[1]), 0.0)
+                        res = (I64, int2uint64(-a[1]) // int2uint64(b[1]), 0.0)
                     elif a[1] > 0 and b[1] < 0:
-                        res = (I64, int2uint64(a[1]) / int2uint64(-b[1]), 0.0)
+                        res = (I64, int2uint64(a[1]) // int2uint64(-b[1]), 0.0)
                     else:
-                        res = (I64, int2uint64(a[1]) / int2uint64(b[1]), 0.0)
+                        res = (I64, int2uint64(a[1]) // int2uint64(b[1]), 0.0)
             elif 0x81 == opcode: # i64.rem_s
                 if b[1] == 0:
                     raise WAException("integer divide by zero")
@@ -1675,6 +1697,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1683,6 +1706,8 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == F32 and b[0] == F32
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x92 == opcode: # f32.add
                 res = (F32, 0, a[2] + b[2])
             elif 0x93 == opcode: # f32.sub
@@ -1714,6 +1739,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1722,6 +1748,8 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == F64 and b[0] == F64
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0xa0 == opcode: # f64.add
                 res = (F64, 0, a[2] + b[2])
             elif 0xa1 == opcode: # f64.sub
@@ -1773,6 +1801,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1900,6 +1929,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s) = %s" % (
                     value_repr(a), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1926,6 +1956,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s) = %s" % (
                     value_repr(a), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -2017,8 +2048,6 @@ class Module():
         self.rdr = Reader(list(data))  # Convert bytes to list of integers
         self.import_value = import_value
         self.import_function = import_function
-        self.data_sections = []
-        self.start_function = -1
 
         # Sections
         self.type = []
@@ -2037,7 +2066,6 @@ class Module():
 
         # block/loop/if blocks {start addr: Block, ...}
         self.block_map = {}
-        self.block_map_type_idx = {}
 
         # Execution state
         self.sp = -1
@@ -2360,8 +2388,8 @@ class Module():
         func = self.function[idx]
         assert isinstance(func,Function)
         func.update(locals, start, end)
-        (self.block_map, self.block_map_type_idx) = find_blocks(
-                self.rdr.bytes, start, end, self.block_map, self.block_map_type_idx)
+        self.block_map = find_blocks(
+                self.rdr.bytes, start, end, self.block_map)
 
     def parse_Code(self, length):
         body_count = self.rdr.read_LEB(32)
@@ -2386,14 +2414,8 @@ class Module():
             offset = int(offset_val[1])
 
             size = self.rdr.read_LEB(32)
-            data = self.rdr.read_bytes(size)
-            self.data_sections.append((offset, data))
-            # for addr in range(offset, offset+size, 1): this threw error, untested fix:
-            for addr in range(offset, min(offset+size, len(self.memory.bytes))):
-                self.memory.bytes[addr] = data[addr-offset]
-                
-    def parse_Start(self, length):
-        self.start_function = self.rdr.read_LEB(32)
+            for addr in range(offset, offset+size, 1):
+                self.memory.bytes[addr] = self.rdr.read_byte()
 
     def interpret(self):
         self.rdr.pos, self.sp, self.fp, self.csp = interpret_mvp(self,
@@ -2564,6 +2586,7 @@ def import_function(module, field, mem, args):
         raise Exception("function import %s not found" % (fname))
 
 def parse_command(module, args):
+    print(f"Parsing command with args: {args}")
     fname = args[0]
     args = args[1:]
     run_args = []
@@ -2582,129 +2605,6 @@ def usage(argv):
 # Entry points
 ######################################
 
-def sanitize_class_name(name):
-    # Remove file extension
-    name = name.split('.')[0]
-    # Replace non-alphanumeric characters with underscores
-    name = re.sub(r'\W+', '_', name)
-    # Ensure the name starts with a letter
-    if not name[0].isalpha():
-        name = 'Wasm_' + name
-    # Capitalize the first letter
-    return name[0].upper() + name[1:]
-
-def generate_monkeyc_classes(module, class_name):
-    output = "import Toybox.Lang;\n"
-    output += "import Toybox.System;\n"
-    output += "import Toybox.Test;\n"
-    output += "\n"
-    output += f"class {class_name} {{\n"
-    output += "    static function createModule() {\n"
-    output += "        var module_ = new Module(\n"
-
-    # Add WASM bytecode as bytearray
-    output += "            // WASM bytecode\n"
-    wasm_bytes = ", ".join([f"0x{byte:02x}" for byte in module.data])
-    output += f"            [{wasm_bytes}]b,\n"
-
-    output += "            new Method($, :import_function), // hardcoded function for now\n"
-
-    # Add memory information
-    output += f"            // Memory\n"
-    output += f"            new Memory({module.memory.pages}, null),\n"
-
-    # Add type information
-    output += "            // Types\n"
-    output += "            [\n"
-    for t in module.type:
-        output += f"                new Type({t.index}, {t.form}, [{', '.join(map(str, t.params))}], [{', '.join(map(str, t.results))}], {t.mask}),\n"
-    output += "            ],\n"
-
-    # Add regular function information
-    output += "            // Functions\n"
-    output += "            [\n"
-    output += "                // Imported\n"
-    for f in module.function:
-        if isinstance(f, FunctionImport):
-            output += f"                new FunctionImport(new Type({f.type.index}, {f.type.form}, [{', '.join(map(str, f.type.params))}], [{', '.join(map(str, f.type.results))}], {f.type.mask}), \"{f.module}\", \"{f.field}\"),\n"
-    
-    output += "                // Internal\n"
-    for f in module.function:
-        if isinstance(f, Function):
-            output += f"                new Function(new Type({f.type.index}, {f.type.form}, [{', '.join(map(str, f.type.params))}], [{', '.join(map(str, f.type.results))}], {f.type.mask}), {f.index}, [{', '.join(map(str, f.locals))}], {f.start}, {f.end}, {f.else_addr}, {f.br_addr}),\n"
-    output += "            ],\n"
-
-    # Add table information
-    output += "            // Tables\n"
-    if module.table:
-        output += "            {\n"
-        for t, entries in module.table.items():
-            output += f"                {t} => [{', '.join(map(str, entries))}],\n"
-        output += "            },\n"
-    else:
-        output += "            null,\n"
-
-    # Add global list
-    output += "            // Globals\n"
-    output += "            [\n"
-    for g in module.global_list:
-        output += f"                [{g[0]}, {g[1]}, {g[2]}],\n"
-    output += "            ],\n"
-
-    # Add export information
-    output += "            // Exports\n"
-    output += "            [\n"
-    for e in module.export_list:
-        output += f"                new Export(\"{e.field}\", {e.kind}, {e.index}),\n"
-    output += "            ],\n"
-
-    # Add export map as the last parameter
-    output += "            // Export map\n"
-    output += "            {\n"
-    for e in module.export_list:
-        output += f"                \"{e.field}\" => new Export(\"{e.field}\", {e.kind}, {e.index}),\n"
-    output += "            },\n"
-
-    # Add block map as the last parameter
-    output += "            // Block map\n"
-    output += "            {\n"
-    for start_addr, block in module.block_map.items():
-        output += f"                {start_addr} => new Block({block.kind}, BLOCK_TYPE[{module.block_map_type_idx[start_addr]}], {block.start}, {block.end}, {block.else_addr}, {block.br_addr}),\n"
-    output += "            }\n"
-
-    # Close the Module constructor
-    output += "        );\n"
-
-    # Add data sections
-    output += "\n        // Data sections\n"
-    for i, (offset, data) in enumerate(module.data_sections):
-        data_bytes = ", ".join([f"0x{byte:02x}" for byte in data])
-        output += f"        module_.memory.write({offset}, [{data_bytes}]b);\n"
-
-    # Set start function if exists
-    if module.start_function >= 0:
-        output += f"        module_.start_function = {module.start_function};\n"
-
-    # Close the createModule function and class
-    output += "        module_.dump();\n"
-    output += "        return module_;\n"
-    output += "    }\n"
-    output += "}\n"
-
-    return output
-
-def generate_monkeyc(wasm_file_path, class_name=None):
-    with open(wasm_file_path, 'rb') as file:
-        wasm = file.read()
-
-    mem = Memory(1)  # Default memory pages
-
-    m = Module(wasm, import_value, import_function, mem)
-    class_name = class_name or sanitize_class_name(wasm_file_path)
-
-    monkeyc_code = generate_monkeyc_classes(m, class_name)
-
-    return monkeyc_code
 
 def entry_point(argv):
     try:
@@ -2715,16 +2615,11 @@ def entry_point(argv):
         fname = None
         args = []
         run_args = []
-        generate_monkeyc = False
-        input_file = ""
-        output_file = None  # Initialize output_file
         idx = 1
         while idx < len(argv):
             arg = argv[idx]
             idx += 1
-            if arg == "--generate-monkeyc":
-                generate_monkeyc = True
-            elif arg == "--help":
+            if arg == "--help":
                 usage(argv)
                 return 1
             elif arg == "--repl":
@@ -2735,9 +2630,6 @@ def entry_point(argv):
             elif arg == "--memory-pages":
                 memory_pages = int(argv[idx])
                 idx += 1
-            elif arg == "-o":  # Handle output file parameter
-                output_file = argv[idx]
-                idx += 1
             elif arg == "--":
                 continue
             elif arg.startswith('--'):
@@ -2746,7 +2638,6 @@ def entry_point(argv):
                 return 2
             else:
                 args.append(arg)
-                input_file = arg
         with open(args[0], 'rb') as file:
             wasm = file.read()
         args = args[1:]
@@ -2766,72 +2657,58 @@ def entry_point(argv):
                 write_I32(mem.bytes, i*4, string_next) # zero terminated
                 string_next += slen
 
-            # Set memoryBase to next 64-bit aligned address 
+            # Set memoryBase to next 64-bit aligned address
             string_next += (8 - (string_next % 8))
             IMPORT_VALUES['env.memoryBase'] = (I32, string_next, 0.0)
 
 
         m = Module(wasm, import_value, import_function, mem)
-        class_name = sanitize_class_name(input_file)
 
-        if generate_monkeyc:
-            monkeyc_code = generate_monkeyc_classes(m, class_name)
-            
-            # Generate output filename
-            if output_file is None:  # Use default if not specified
-                output_file = os.path.splitext(input_file)[0] + ".mc"
-            
-            # Write the generated code to the output file
-            with open(output_file, 'w') as file:
-                file.write(monkeyc_code)
-            
-            print(f"MonkeyC code generated and saved to {output_file}")
+        if argv_mode:
+            fname = "_main"
+            fidx = m.export_map[fname].index
+            arg_count = len(m.function[fidx].type.params)
+            if arg_count == 2:
+                run_args = [(I32, len(args), 0.0), (I32, 0, 0.0)]
+            elif arg_count == 0:
+                run_args = []
+            else:
+                raise Exception("_main has %s args, should have 0 or 2" %
+                        arg_count)
+        else:
+            # Convert args to expected numeric type. This must be
+            # after the module is initialized so that we know what
+            # types the arguments are
+            fname, run_args = parse_command(m, args)
 
-        # if argv_mode:
-        #     fname = "_main"
-        #     fidx = m.export_map[fname].index
-        #     arg_count = len(m.function[fidx].type.params)
-        #     if arg_count == 2:
-        #         run_args = [(I32, len(args), 0.0), (I32, 0, 0.0)]
-        #     elif arg_count == 0:
-        #         run_args = []
-        #     else:
-        #         raise Exception("_main has %s args, should have 0 or 2" %
-        #                 arg_count)
-        # else:
-        #     # Convert args to expected numeric type. This must be
-        #     # after the module is initialized so that we know what
-        #     # types the arguments are
-        #     fname, run_args = parse_command(m, args)
+        if '__post_instantiate' in m.export_map:
+            m.run('__post_instantiate', [])
 
-        # if '__post_instantiate' in m.export_map:
-        #     m.run('__post_instantiate', [])
+        if not repl:
 
-        # if not repl:
+            # Invoke one function and exit
+            try:
+                return m.run(fname, run_args, not argv_mode)
+            except WAException as e:
+                os.write(2, "".join(traceback.format_exception(*sys.exc_info())))
+                os.write(2, "%s\n" % e.message)
+                return 1
+        else:
+            # Simple REPL
+            while True:
+                try:
+                    line = readline("webassembly> ")
+                    if line == "": continue
 
-        #     # Invoke one function and exit
-        #     try:
-        #         return m.run(fname, run_args, not argv_mode)
-        #     except WAException as e:
-        #         os.write(2, "".join(traceback.format_exception(*sys.exc_info())))
-        #         os.write(2, "%s\n" % e.message)
-        #         return 1
-        # else:
-        #     # Simple REPL
-        #     while True:
-        #         try:
-        #             line = readline("webassembly> ")
-        #             if line == "": continue
+                    fname, run_args = parse_command(m, line.split(' '))
+                    res = m.run(fname, run_args, True)
+                    if not res == 0:
+                        return res
 
-        #             fname, run_args = parse_command(m, line.split(' '))
-        #             res = m.run(fname, run_args, True)
-        #             if not res == 0:
-        #                 return res
-
-        #         except WAException as e:
-        #             os.write(2, "Exception: %s\n" % e.message)
-        #         except EOFError as e:
-        #             break
+                except WAException as e:
+                    os.write(2, "Exception: %s\n" % e.message)
+                except EOFError as e:
+                    break
 
     except WAException as e:
         sys.stderr.write("".join(traceback.format_exception(*sys.exc_info())))

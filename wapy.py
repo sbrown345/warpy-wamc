@@ -3,9 +3,9 @@
 INFO  = False   # informational logging
 TRACE = False   # trace instructions/stacks
 DEBUG = False   # verbose logging
-INFO  = True    # informational logging
-TRACE = True    # trace instructions/stacks
-DEBUG = True    # verbose logging
+# INFO  = True    # informational logging
+# TRACE = True    # trace instructions/stacks
+# DEBUG = True    # verbose logging
 VALIDATE= True
 
 import sys, os, math, time
@@ -649,16 +649,20 @@ def write_F64(bytes, pos, fval):
 def value_repr(val):
     vt, ival, fval = val
     vtn = VALUE_TYPE[vt]
-    if   vtn in ('i32', 'i64'):
-        return "%s:%s" % (hex(ival), vtn)
+    if vtn in ('i32', 'i64'):
+        if not isinstance(ival, int):
+            raise TypeError(f"Expected int for {vtn}, got {type(ival).__name__}")
+        return f"{hex(ival)}:{vtn}"
     elif vtn in ('f32', 'f64'):
-        str = "%.7g" % fval
-        if str.find('.') < 0:
-            return "%f:%s" % (fval, vtn)
+        if not isinstance(fval, float):
+            raise TypeError(f"Expected float for {vtn}, got {type(fval).__name__}")
+        str_val = f"{fval:.7g}"
+        if '.' not in str_val:
+            return f"{fval:.1f}:{vtn}"
         else:
-            return "%s:%s" % (str, vtn)
+            return f"{str_val}:{vtn}"
     else:
-        raise Exception("unknown value type %s" % vtn)
+        raise ValueError(f"Unknown value type {vtn}")
 
 def type_repr(t):
     return "<index: %s, form: %s, params: %s, results: %s, mask: %s>" % (
@@ -846,11 +850,14 @@ def do_call(stack, callstack, sp, fp, csp, func, pc, indirect=False):
 
     # Push block, stack size and return address onto callstack
     t = func.type
+    if TRACE:
+        info("  do_call: Setting return address to 0x%x" % pc)
     csp += 1
     callstack[csp] = (func, sp-len(t.params), fp, pc)
 
     # Update the pos/instruction counter to the function
     pc = func.start
+    info("do_call: pc: 0x%x" % pc)
 
     if TRACE:
         info("  Calling function 0x%x, start: 0x%x, end: 0x%x, %d locals, %d params, %d results" % (
@@ -931,13 +938,21 @@ def interpret_mvp(module,
         # Reds
         memory, sp, stack, fp, csp, callstack):
 
+    operation_count = 0;
+
     while pc < len(code):
         opcode = code[pc]
 
         cur_pc = pc
         pc += 1
 
+        operation_count += 1
+
+        # if operation_count > 100:
+        #     break
+
         if TRACE:
+            info("operation_count: %d" % operation_count)
             dump_stacks(sp, stack, fp, csp, callstack)
             _, immediates = skip_immediates(code, cur_pc)
             info("    0x%x <0x%x/%s%s%s>" % (
@@ -1199,6 +1214,8 @@ def interpret_mvp(module,
                     OPERATOR_INFO[opcode][0], opcode))
             sp += 1
             stack[sp] = res
+            if TRACE:
+                debug(f"Memory load: addr={addr}, value={value_repr(res)}")
 
         # Memory store operators
         elif 0x36 <= opcode <= 0x3e:
@@ -1243,6 +1260,8 @@ def interpret_mvp(module,
             else:
                 raise WAException("%s(0x%x) unimplemented" % (
                     OPERATOR_INFO[opcode][0], opcode))
+            if TRACE:
+                debug(f"Memory store: addr={addr}, value={value_repr(val)}")
 
         # Memory size operators
         elif 0x3f == opcode:  # current_memory
@@ -1311,6 +1330,8 @@ def interpret_mvp(module,
         elif 0x46 <= opcode <= 0x66:
             a, b = stack[sp-1], stack[sp]
             sp -= 2
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x46 == opcode: # i32.eq
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
                 res = (I32, a[1] == b[1], 0.0)
@@ -1415,6 +1436,8 @@ def interpret_mvp(module,
                     value_repr(a), value_repr(b), value_repr(res)))
             sp += 1
             stack[sp] = res
+            if TRACE:
+                debug(f"Post-operation result: res={value_repr(res)}")
 
         #
         # Numeric operators
@@ -1441,6 +1464,8 @@ def interpret_mvp(module,
                 while count < 32 and (val % 2) == 0:
                     count += 1
                     val = val / 2
+                    if not isinstance(val, int):
+                        raise WAException("i32.ctz operation resulted in a non-integer valueuse `val = val // 2` ????")
                 res = (I32, count, 0.0)
             elif 0x69 == opcode: # i32.popcnt
                 if VALIDATE: assert a[0] == I32
@@ -1450,6 +1475,8 @@ def interpret_mvp(module,
                     if 0x1 & val:
                         count += 1
                     val = val / 2
+                    if not isinstance(val, int):
+                        raise WAException("i32.ctz operation resulted in a non-integer value.   use `val = val // 2` ????")
                 res = (I32, count, 0.0)
             elif 0x79 == opcode: # i64.clz
                 if VALIDATE: assert a[0] == I64
@@ -1551,6 +1578,8 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == I32 and b[0] == I32
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x6a == opcode: # i32.add
                 res = (I32, int2int32(a[1] + b[1]), 0.0)
             elif 0x6b == opcode: # i32.sub
@@ -1568,7 +1597,7 @@ def interpret_mvp(module,
                 if b[1] == 0:
                     raise WAException("integer divide by zero")
                 else:
-                    res = (I32, int2uint32(a[1]) / int2uint32(b[1]), 0.0)
+                    res = (I32, int(int2uint32(a[1]) // int2uint32(b[1])), 0.0)
             elif 0x6f == opcode: # i32.rem_s
                 if b[1] == 0:
                     raise WAException("integer divide by zero")
@@ -1601,6 +1630,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1609,6 +1639,8 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == I64 and b[0] == I64
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x7c == opcode: # i64.add
                 res = (I64, int2int64(a[1] + b[1]), 0.0)
             elif 0x7d == opcode: # i64.sub
@@ -1627,11 +1659,11 @@ def interpret_mvp(module,
                     raise WAException("integer divide by zero")
                 else:
                     if a[1] < 0 and b[1] > 0:
-                        res = (I64, int2uint64(-a[1]) / int2uint64(b[1]), 0.0)
+                        res = (I64, int2uint64(-a[1]) // int2uint64(b[1]), 0.0)
                     elif a[1] > 0 and b[1] < 0:
-                        res = (I64, int2uint64(a[1]) / int2uint64(-b[1]), 0.0)
+                        res = (I64, int2uint64(a[1]) // int2uint64(-b[1]), 0.0)
                     else:
-                        res = (I64, int2uint64(a[1]) / int2uint64(b[1]), 0.0)
+                        res = (I64, int2uint64(a[1]) // int2uint64(b[1]), 0.0)
             elif 0x81 == opcode: # i64.rem_s
                 if b[1] == 0:
                     raise WAException("integer divide by zero")
@@ -1664,6 +1696,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1672,6 +1705,8 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == F32 and b[0] == F32
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x92 == opcode: # f32.add
                 res = (F32, 0, a[2] + b[2])
             elif 0x93 == opcode: # f32.sub
@@ -1703,6 +1738,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1711,6 +1747,8 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == F64 and b[0] == F64
+            if TRACE:
+                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0xa0 == opcode: # f64.add
                 res = (F64, 0, a[2] + b[2])
             elif 0xa1 == opcode: # f64.sub
@@ -1762,6 +1800,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1889,6 +1928,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s) = %s" % (
                     value_repr(a), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1915,6 +1955,7 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s) = %s" % (
                     value_repr(a), value_repr(res)))
+                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -2376,6 +2417,7 @@ class Module():
                 self.memory.bytes[addr] = self.rdr.read_byte()
 
     def interpret(self):
+        info("interpret: pc: 0x%x" % self.rdr.pos)
         self.rdr.pos, self.sp, self.fp, self.csp = interpret_mvp(self,
                 # Greens
                 self.rdr.pos, self.rdr.bytes, self.function,
@@ -2544,6 +2586,7 @@ def import_function(module, field, mem, args):
         raise Exception("function import %s not found" % (fname))
 
 def parse_command(module, args):
+    print(f"Parsing command with args: {args}")
     fname = args[0]
     args = args[1:]
     run_args = []
