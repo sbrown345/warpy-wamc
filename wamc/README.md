@@ -12,6 +12,6 @@ python wapy.py wamc/test/fizzbuzz.wasm &> wapy-fizzbuzz.log
 - [x] Basic classes
 - [x] Generate MonkeyC factory from .wasm with modified warpy
 - [x] Port enough to run `addTwo.wat`
-- [x] `fizzbuzz.wat`
+- [x] Run `fizzbuzz.wat` on real device
 - [ ] .wast tests
 - [ ] ...
