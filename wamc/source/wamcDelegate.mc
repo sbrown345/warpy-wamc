@@ -14,13 +14,7 @@ class wamcDelegate extends WatchUi.BehaviorDelegate {
 
     function onSelect() as Boolean {
         // var result = getApp().add(12, 21);
-
-        var m = Wamc_test_fizzbuzz.createModule();
-        var run_args = [];
-        var result = m.runStartFunction();
+        var result = getApp().fizzbuzz();
         System.println("result = " + host_output);
-
-
-        WatchUi.showToast("res=" + result, null);
     }
 }

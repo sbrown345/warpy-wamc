@@ -1153,14 +1153,14 @@ function popBlock(stack as StackType, callstack as CallStackType, sp as Number, 
 function do_call(stack as StackType, callstack as CallStackType, sp as Number, fp as Number, csp as Number, func as Function, pc as Number, indirect as Boolean) as Array<Number> {
     // Push block, stack size and return address onto callstack
     var t = func.type;
-    System.println("do_call: Setting return address to 0x" + pc.format("%x"));
+    // System.println("do_call: Setting return address to 0x" + pc.format("%x"));
     csp += 1;
     callstack[csp] = [func, sp - t.params.size(), fp, pc];
     // System.println("do_call: pc:" + pc + ", " + callstackRepr(csp, callstack));
 
     // Update the pos/instruction counter to the function
     pc = func.start;
-    System.println("do_call: pc: 0x" + pc.format("%x"));
+    // System.println("do_call: pc: 0x" + pc.format("%x"));
 
     if (TRACE) {
         info(Lang.format("  Calling function 0x$1$, start: 0x$2$, end: 0x$3$, $4$ locals, $5$ params, $6$ results",
@@ -2922,6 +2922,7 @@ function host_putchar(mem as Memory, args as Array<Array<Number>>) as Array<Arra
         throw new WAException("Invalid argument type");
     }
     var charCode = args[0][1];
+    terminal.putChar(charCode);
     // System.println("host_putchar: " + charCode);
     // System.print(charCode.toChar().toString());
     host_output += charCode.toChar().toString();

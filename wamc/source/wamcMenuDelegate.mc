@@ -14,19 +14,16 @@ class wamcMenuDelegate extends WatchUi.MenuInputDelegate {
         if (item == :add12) {
             a = 1;
             b = 2;
+            var result = getApp().add(a, b);
+            terminal.addLine("1+2=" + result[1]);
         } else if (item == :add16) {
             a = 1;
             b = 6;
+            var result = getApp().add(a, b);
+            terminal.addLine("1+6=" + result[1]);
         } else if (item == :fizzbuzz) {
-            var m = Wamc_test_fizzbuzz.createModule();
-            var run_args = [];
-            var result = m.runStartFunction();
-            System.println("result = " + result);
-            System.println("fizzbuzz output = \n" + host_output);
+            getApp().fizzbuzz();
         }
-
-        var result = getApp().add(a, b);
-        WatchUi.showToast("=" + result[1], null);
     }
 
 }
