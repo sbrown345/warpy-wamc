@@ -1,5 +1,7 @@
 <menu id="MainMenu">
-    <menu-item id="fizzbuzz" label="FizzBuzz" />
+    <!-- <menu-item id="fizzbuzz" label="FizzBuzz" /> -->
+    <menu-item id="moreOps" label="Increase ops/s" />
+    <menu-item id="fewerOps" label="Decrease ops/s" />
     <menu-item id="add12" label="1+2" />
     <menu-item id="add16" label="1+6" />
 </menu>

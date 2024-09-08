@@ -11,10 +11,14 @@ class wamcDelegate extends WatchUi.BehaviorDelegate {
         WatchUi.pushView(new Rez.Menus.MainMenu(), new wamcMenuDelegate(), WatchUi.SLIDE_UP);
         return true;
     }
-
+    
     function onSelect() as Boolean {
-        // var result = getApp().add(12, 21);
-        var result = getApp().fizzbuzz();
-        System.println("result = " + host_output);
+        getApp().fizzbuzz(method(:onFizzbuzzComplete));
+        return true;
+    }
+
+    function onFizzbuzzComplete(result as ValueTupleType) as Void {
+        System.println("result = " + result);
+        WatchUi.requestUpdate();
     }
 }

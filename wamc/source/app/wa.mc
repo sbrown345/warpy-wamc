@@ -1,6 +1,7 @@
 import Toybox.Lang;
 import Toybox.Math;
 import Toybox.System;
+import Toybox.Timer;
 
 typedef ImportMethodType as Method(module_ as Module, field as String) as Array<Number>;
 typedef ImportFunctionType as Method(module_ as Module, field as String, mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>>;
@@ -1257,18 +1258,23 @@ function interpret_mvp(module_,
         // reds
         memory, sp, stack, fp, csp, callstack
     ) as [Number, Number, Number, Number] {
+
     var operation_count = 0;
 
     while (pc < code.size()) {
+        // if (operation_count > 100) {
+        //     break;
+        // }
+
+        if (module_.maxAsyncOperations != -1 && operation_count > module_.maxAsyncOperations) {
+            return [pc, sp, fp, csp];
+        }
+
         var opcode = code[pc];
         var curPc = pc;
         pc += 1;
 
         operation_count++;
-
-        // if (operation_count > 100) {
-        //     break;
-        // }
 
         if (TRACE) {
             info("operation_count: " + operation_count);
@@ -2337,7 +2343,7 @@ function interpret_mvp(module_,
         }
     }
 
-     return [pc, sp, fp, csp];
+    return [pc, sp, fp, csp];
 }
 
 // ####################################
@@ -2687,7 +2693,7 @@ class Module {
 
     function hexpad(x as Number, cnt as Number) as String {
         return x.format("%0" + cnt + "x");
-    }
+    }        
 
     public function interpret() as Void {
         var result = interpret_mvp(self,
@@ -2704,6 +2710,70 @@ class Module {
         self.csp = result[3];
     }
 
+    // async interpretation
+    private var interpretTimer as Timer.Timer?;
+    private var interpretCallback as Method(ValueTupleType)?;
+    var maxAsyncOperations = -1;
+
+    function isAsyncRunning() as Boolean {
+        return self.interpretTimer != null;
+    }
+
+    private function interpretAndFinish(callback as Method(ValueTupleType), maxOps as Number) as Void {
+        if (self.interpretTimer != null) {
+            return; // Prevent running more than one interpretation
+        }
+        self.maxAsyncOperations = maxOps;
+        self.interpretCallback = callback;
+        self.interpret();
+        if (self.csp == -1) {
+            self.finishInterpretation();
+        } else {
+            // Start a timer that will call continueInterpretation every 50ms (minimum time value)
+            self.interpretTimer = new Timer.Timer();
+            self.interpretTimer.start(method(:continueInterpretation), 50, false);
+        }
+    }
+
+    function continueInterpretation() as Void {
+        if (self.interpretTimer == null) {
+            return; // Prevent running more than one interpretation
+        }
+        self.interpret();
+        if (self.csp == -1) {
+            self.finishInterpretation();
+        } else {
+            // Restart the timer for the next interpretation step
+            self.interpretTimer.start(method(:continueInterpretation), 50, false);
+        }
+    }
+
+    private function finishInterpretation() as Void {
+        if (self.interpretTimer != null) {
+            self.interpretTimer.stop();
+            self.interpretTimer = null;
+        }
+        
+        if (self.interpretCallback != null) {
+            var returnValue = self.getReturnValue();
+            self.interpretCallback.invoke(returnValue);
+            self.interpretCallback = null;
+        }
+
+        self.maxAsyncOperations = -1;
+    }
+
+    private function getReturnValue() as ValueTupleType {
+    if (self.sp >= 0) {
+        var ret = self.stack[self.sp];
+        self.sp--;
+        return ret;
+    } else {
+        return [I32, 0, 0.0] as ValueTupleType; // Default return value if stack is empty
+        }
+    }
+
+    // run functions
     public function runCatchTrap(fname as String, args as Array<Array<Number>>) as ValueTupleType or WAException {
         try {
             var printReturn = false;
@@ -2719,7 +2789,7 @@ class Module {
         var returnValue = true;
         return self.runWithArgs(fname, args, printReturn, returnValue);
     }
-
+    
     // dont really want to start it immediately when creating the module
     // but we need to set the start function somewhere
     public function runStartFunction() as ValueTupleType {
@@ -2758,6 +2828,51 @@ class Module {
             }
             return 0;
         }
+    }
+
+    // watchdog workaround: max ops per timer call
+    public function runStartFunctionAsync(maxAsyncOps as Number, callback as Method(ValueTupleType)) as Void {
+        // Run the start function if set
+        if (self.start_function >= 0) {
+            var fidx = self.start_function;
+            var func = self.function_[fidx];
+            info(Lang.format("Running start function 0x$1$", [fidx.format("%x")]));
+            if (TRACE) {
+                dump_stacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+            }
+            if (func instanceof FunctionImport) {
+                self.sp = do_callImport(self.stack, self.sp, self.memory, self.importFunction, func);
+                self.interpretAndFinish(callback, maxAsyncOps);
+            } else if (func instanceof Function) {
+                var result = do_call(self.stack, self.callstack, self.sp, self.fp, self.csp, func, self.rdr.bytes.size(), false);
+                self.rdr.pos = result[0];
+                self.sp = result[1];
+                self.fp = result[2];
+                self.csp = result[3];
+                self.interpretAndFinish(callback, maxAsyncOps);
+            } else {
+                self.finalizeStartFunction(callback);
+            }
+        } else {
+            self.finalizeStartFunction(callback);
+        }
+    }
+
+    private function finalizeStartFunction(callback as Method(ValueTupleType)) as Void {
+        if (TRACE) {
+            dump_stacks(self.sp, self.stack, self.fp, self.csp, self.callstack);
+        }
+        var targs = [];
+        var ret;
+        if (self.sp >= 0) {
+            ret = self.stack[self.sp];
+            self.sp--;
+            System.println("Start function: (" + Lang.format("$1$", [join(targs, ", ")]) + ") = " + value_repr(ret));
+        } else {
+            System.println("Start function: (" + Lang.format("$1$", [join(targs, ", ")]) + ")");
+            ret = [I32, 0, 0.0] as ValueTupleType; // Default return value if stack is empty
+        }
+        callback.invoke(ret);
     }
 
     public function runWithArgs(fname as String?, args as Array<Array<Number>>, printReturn as Boolean, returnValue as Boolean) as Number | ValueTupleType {

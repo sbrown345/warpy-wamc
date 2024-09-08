@@ -10,7 +10,10 @@ class Terminal {
     private var _currentLine as Array<Number>;
 
     function initialize(maxLines as Number, font as Graphics.FontType) {
-        _lines = [];
+        _lines = [
+            "wamc terminal",
+            "============="
+        ];
         _maxLines = maxLines;
         _font = font;
         _currentLine = [];
