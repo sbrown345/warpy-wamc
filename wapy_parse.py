@@ -2617,7 +2617,7 @@ def generate_monkeyc_classes(module, class_name):
     output += "            // Types\n"
     output += "            [\n"
     for t in module.type:
-        output += f"                new Type({t.index}, {t.form}, [{', '.join(map(str, t.params))}], [{', '.join(map(str, t.results))}], {t.mask}),\n"
+        output += f"                new Type({t.index}, {t.form}, [{', '.join(map(str, t.params))}], [{', '.join(map(str, t.results))}], {t.mask}L),\n"
     output += "            ],\n"
 
     # Add regular function information
@@ -2626,12 +2626,12 @@ def generate_monkeyc_classes(module, class_name):
     output += "                // Imported\n"
     for f in module.function:
         if isinstance(f, FunctionImport):
-            output += f"                new FunctionImport(new Type({f.type.index}, {f.type.form}, [{', '.join(map(str, f.type.params))}], [{', '.join(map(str, f.type.results))}], {f.type.mask}), \"{f.module}\", \"{f.field}\"),\n"
+            output += f"                new FunctionImport(new Type({f.type.index}, {f.type.form}, [{', '.join(map(str, f.type.params))}], [{', '.join(map(str, f.type.results))}], {f.type.mask}L), \"{f.module}\", \"{f.field}\"),\n"
     
     output += "                // Internal\n"
     for f in module.function:
         if isinstance(f, Function):
-            output += f"                new Function(new Type({f.type.index}, {f.type.form}, [{', '.join(map(str, f.type.params))}], [{', '.join(map(str, f.type.results))}], {f.type.mask}), {f.index}, [{', '.join(map(str, f.locals))}], {f.start}, {f.end}, {f.else_addr}, {f.br_addr}),\n"
+            output += f"                new Function(new Type({f.type.index}, {f.type.form}, [{', '.join(map(str, f.type.params))}], [{', '.join(map(str, f.type.results))}], {f.type.mask}L), {f.index}, [{', '.join(map(str, f.locals))}], {f.start}, {f.end}, {f.else_addr}, {f.br_addr}),\n"
     output += "            ],\n"
 
     # Add table information

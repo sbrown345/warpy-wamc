@@ -139,9 +139,9 @@ class Type {
     public var form as Number;
     public var params as Array<Number>;
     public var results as Array<Number>;
-    public var mask as Number;
+    public var mask as Long;
 
-    function initialize(index as Number, form as Number, params as Array<Number>, results as Array<Number>, mask as Number?) {
+    function initialize(index as Number, form as Number, params as Array<Number>, results as Array<Number>, mask as Long?) {
         self.index = index;
         self.form = form;
         self.params = params;
