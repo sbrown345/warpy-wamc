@@ -17,7 +17,6 @@ class wamcApp extends Application.AppBase {
         AppBase.initialize();
         waModule = Wamc_test_addTwo.createModule();
         fizzbuzzModule = Wamc_test_fizzbuzz.createModule();
-        System.println("app init");
         terminal = new Terminal(10, Graphics.FONT_XTINY);
         interpretStep = new Timer.Timer();
     }

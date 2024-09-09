@@ -3,9 +3,9 @@
 INFO  = False   # informational logging
 TRACE = False   # trace instructions/stacks
 DEBUG = False   # verbose logging
-# INFO  = True    # informational logging
-# TRACE = True    # trace instructions/stacks
-# DEBUG = True    # verbose logging
+INFO  = True    # informational logging
+TRACE = True    # trace instructions/stacks
+DEBUG = True    # verbose logging
 VALIDATE= True
 
 import sys, os, math, time
@@ -99,10 +99,10 @@ class FunctionImport(Code):
         self.module = module
         self.field = field
         fname = "%s.%s" % (module, field)
-        if not fname in ["spectest.print", "spectest.print_i32",
-                "env.printline", "env.readline", "env.read_file",
-                "env.get_time_ms", "env.exit", "host.putchar"]:
-            raise Exception("function import %s not found" % (fname))
+        # if not fname in ["spectest.print", "spectest.print_i32",
+        #         "env.printline", "env.readline", "env.read_file",
+        #         "env.get_time_ms", "env.exit", "host.putchar"]:
+        #     raise Exception("function import %s not found" % (fname))
 
 
 ######################################
@@ -2100,7 +2100,7 @@ class Module():
 
     def dump(self):
         #debug("raw module data: %s" % self.data)
-        debug("module bytes: %s" % byte_code_repr(self.rdr.bytes))
+        # debug("module bytes: %s" % byte_code_repr(self.rdr.bytes))
         info("")
 
         info("Types:")
@@ -2195,8 +2195,12 @@ class Module():
         else:                    self.rdr.read_bytes(length)
 
     def read_sections(self):
+        global DEBUG
+        original_debug = DEBUG
+        DEBUG = False
         while not self.rdr.eof():
             self.read_section()
+        DEBUG = original_debug
 
     ## Wasm section handlers
 

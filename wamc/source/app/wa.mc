@@ -10,12 +10,12 @@ typedef CallStackType as Array<Array<Number or Block or Function>>;
 typedef Global as ValueTupleType;
 typedef ValueTupleType as [Types, Number, Float];
 
-var INFO  = false; // informational logging
-var TRACE = false; // trace instructions/stacks
-var DEBUG = false; // verbose logging
-// var INFO  = true;
-// var TRACE = true;
-// var DEBUG = true;
+// var INFO  = false; // informational logging
+// var TRACE = false; // trace instructions/stacks
+// var DEBUG = false; // verbose logging
+var INFO  = true;
+var TRACE = true;
+var DEBUG = true;
 var VALIDATE = true;
 
 
@@ -2613,7 +2613,7 @@ class Module {
     }
 
     public function dump() as Void {
-        debug("module bytes: " + byteCodeRepr(self.rdr.bytes));
+        // debug("module bytes: " + byteCodeRepr(self.rdr.bytes));
         info("");
 
         info("Types:");
@@ -2622,6 +2622,7 @@ class Module {
         }
 
         info("Imports:");
+        // these havn't been added
         for (var i = 0; i < self.import_list.size(); i++) {
             var imp = self.import_list[i];
             if (imp.kind == 0x0) {  // Function
@@ -2638,7 +2639,7 @@ class Module {
 
         info("Functions:");
         for (var i = 0; i < self.function_.size(); i++) {
-            info("  0x" + i.format("%x") + " " + funcRepr(self.function_[i]));
+            info("  0x" + i.format("%02x") + " " + funcRepr(self.function_[i]));
         }
         info("Tables:");
         if (self.table != null && self.table.size() > 0) {
@@ -2650,7 +2651,7 @@ class Module {
                 for (var j = 0; j < entries.size(); j++) {
                     entryStrings.add(entries[j].format("%x"));
                 }
-                info("  0x" + key.format("%x") + " -> [" + join(entryStrings, ",") + "]");
+                info("  0x" + key.format("%02x") + " -> [" + join(entryStrings, ",") + "]");
             }
         } else {
             info("  No tables defined");
@@ -2685,7 +2686,7 @@ class Module {
         for (var i = 0; i < blockKeys.size(); i++) {
             var k = blockKeys[i];
             var bl = self.block_map[k];
-            blockMapStrings.add("'" + blockRepr(bl) + "' [0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]'");
+            blockMapStrings.add("'" + blockRepr(bl) + "[0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]'");
         }
         info("block_map: [" + join(blockMapStrings, ", ") + "]");
         info("");
