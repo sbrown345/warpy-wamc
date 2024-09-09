@@ -2607,7 +2607,7 @@ def generate_monkeyc_classes(module, class_name):
     wasm_bytes = ", ".join([f"0x{byte:02x}" for byte in module.data])
     output += f"            [{wasm_bytes}]b,\n"
 
-    output += "            new Method($, :import_function), // hardcoded function for now\n"
+    output += f"            new Method($, :{class_name}_import_function), // hardcoded function for now\n"
 
     # Add memory information
     output += f"            // Memory\n"
@@ -2690,6 +2690,23 @@ def generate_monkeyc_classes(module, class_name):
     output += "        return module_;\n"
     output += "    }\n"
     output += "}\n"
+
+    # Commented out function for easy copying and pasting
+    output += "\n"
+    output += "/*\n"
+    output += f'function {class_name}_import_function(module_ as Module, field as String, mem as Memory, args as ValueTupleType) as ValueTupleType {{\n'
+    output += "    var fname = module_ + \".\" + field;\n"
+    output += "    \n"
+    for f in module.function:
+        if isinstance(f, FunctionImport):
+            output += f"    if (fname.equals(\"{f.module}.{f.field}\")) {{\n"
+            output += f"        return {f.module}_{f.field}(mem, args);\n"
+            output += "    } else "
+    output += "{\n"
+    output += "        throw new WAException(\"function import \" + fname + \" not found\");\n"
+    output += "    }\n"
+    output += "}\n"
+    output += "*/\n"
 
     return output
 

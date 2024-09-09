@@ -1185,7 +1185,7 @@ function do_call(stack as StackType, callstack as CallStackType, sp as Number, f
 function do_callImport(stack as StackType, sp as Number, memory as Memory, importFunction as ImportFunctionType, func as FunctionImport) as Number {
     var t = func.type;
 
-    var args = [] as Array<Array<Number>>;
+    var args = [] as ValueTupleType;
     var idx;
     for (idx = t.params.size() - 1; idx >= 0; idx--) {
         var arg = stack[sp];
@@ -2774,7 +2774,7 @@ class Module {
     }
 
     // run functions
-    public function runCatchTrap(fname as String, args as Array<Array<Number>>) as ValueTupleType or WAException {
+    public function runCatchTrap(fname as String, args as ValueTupleType) as ValueTupleType or WAException {
         try {
             var printReturn = false;
             var returnValue = true;
@@ -2784,7 +2784,7 @@ class Module {
         }        
     }
 
-    public function run(fname as String, args as Array<Array<Number>>) as ValueTupleType {
+    public function run(fname as String, args as ValueTupleType) as ValueTupleType {
         var printReturn = false;
         var returnValue = true;
         return self.runWithArgs(fname, args, printReturn, returnValue);
@@ -2875,7 +2875,7 @@ class Module {
         callback.invoke(ret);
     }
 
-    public function runWithArgs(fname as String?, args as Array<Array<Number>>, printReturn as Boolean, returnValue as Boolean) as Number | ValueTupleType {
+    public function runWithArgs(fname as String?, args as ValueTupleType, printReturn as Boolean, returnValue as Boolean) as Number | ValueTupleType {
         // Reset stacks
         self.sp = -1;
         self.fp = -1;
@@ -3028,7 +3028,7 @@ class Module {
 //     return [(I32, int(time.time()*1000 - 0x38640900), 0.0)]
 
 var host_output = "";
-function host_putchar(mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>> {
+function host_putchar(mem as Memory, args as ValueTupleType) as ValueTupleType {
     if (args.size() != 1) {
         throw new WAException("Invalid number of arguments");
     }
@@ -3045,7 +3045,7 @@ function host_putchar(mem as Memory, args as Array<Array<Number>>) as Array<Arra
 }
 
 
-function import_function(module_ as Module, field as String, mem as Memory, args as Array<Array<Number>>) as Array<Array<Number>> {
+function import_function(module_ as Module, field as String, mem as Memory, args as ValueTupleType) as ValueTupleType {
     var fname = module_ + "." + field;
 //     if fname in ["spectest.print", "spectest.print_i32"]:
 //         return spectest_print(mem, args)
