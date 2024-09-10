@@ -98,7 +98,7 @@ function assertTrap(expectedAssertMessage as String, actual as Exception) as Boo
     return true;
 }
 function i32(x) { return [I32, x.toNumber(), 0.0]; }
-function i64(x) { return [I64, x.toLong, 0.0]; }
+function i64(x) { return [I64, x.toLong(), 0.0]; }
 function f32(x) { return [F32, 0, x.toFloat()]; }
 function f64(x) { return [F64, 0, x.toDouble()]; }
 
@@ -799,7 +799,7 @@ function uint642bytes(v as Long) as Array<Number> {
     return result;
 }
 
-function bytes2uint64(b as Array<Number>) as Long {
+function bytes2uint64(b as ByteArray) as Long {
     var result = (b[7].toLong() << 56) |
            (b[6].toLong() << 48) |
            (b[5].toLong() << 40) |
@@ -809,6 +809,10 @@ function bytes2uint64(b as Array<Number>) as Long {
            (b[1].toLong() << 8) |
            b[0].toLong();
     System.println("bytes2uint64: input=" + b + ", output=" + result);
+    if(!(result instanceof Long)) {
+        System.println("bytes2uint64: result is not a Long");
+        result = result.toLong();
+    }
     return result;
 }
 
@@ -871,11 +875,22 @@ function read_I32(bytes, pos) {
     return bytes.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
 }
 
+// function read_I64(bytes as ByteArray, pos as Number) as Long {
+//     assert(pos >= 0, null);
+//     var slice = bytes.slice(pos, pos + 8);
+//     System.println("read_I64: pos=" + pos + ", slice=" + slice);
+//     return bytes2uint64(slice);
+// }
+
 function read_I64(bytes as ByteArray, pos as Number) as Long {
     assert(pos >= 0, null);
-    var slice = bytes.slice(pos, pos + 8);
-    System.println("read_I64: pos=" + pos + ", slice=" + slice);
-    return bytes2uint64(slice);
+    var low = bytes.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
+    var high = bytes.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => pos + 4 });
+    
+    var result = (high.toLong() << 32) | (low.toLong() & 0xFFFFFFFF);
+    
+    System.println("read_I64: pos=" + pos + ", low=" + low + ", high=" + high + ", result=" + result);
+    return result;
 }
 
 function read_F32(bytes, pos) {
@@ -895,19 +910,36 @@ function write_I32(bytes as ByteArray, pos as Number, ival as Number) as Void {
 }
 
 
+// function write_I64(bytes as ByteArray, pos as Number, ival as Long) as Void {
+//     System.println("write_I64: pos=" + pos + ", ival=" + ival);
+    
+//     var byteArray = uint642bytes(ival);
+    
+//     for (var i = 0; i < 8; i++) {
+//         bytes[pos + i] = byteArray[i];
+//     }
+
+//     System.println("write_I64: Bytes written: " + bytes.slice(pos, pos + 8));
+
+//     var num = read_I64(bytes, pos);
+//     System.println("write_I64: Wrote " + ival + ", read back " + num);
+// }
+
 function write_I64(bytes as ByteArray, pos as Number, ival as Long) as Void {
+    ival = ival.toLong();
+    
     System.println("write_I64: pos=" + pos + ", ival=" + ival);
     
-    var byteArray = uint642bytes(ival);
+    var low = ival.toNumber() & 0xFFFFFFFF;
+    var high = (ival >> 32).toNumber() & 0xFFFFFFFF;
     
-    for (var i = 0; i < 8; i++) {
-        bytes[pos + i] = byteArray[i];
-    }
+    bytes.encodeNumber(low, Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
+    bytes.encodeNumber(high, Lang.NUMBER_FORMAT_SINT32, { :offset => pos + 4 });
 
     System.println("write_I64: Bytes written: " + bytes.slice(pos, pos + 8));
 
-    var num = read_I64(bytes, pos);
-    System.println("write_I64: Wrote " + ival + ", read back " + num);
+    var readBack = read_I64(bytes, pos);
+    System.println("write_I64: Wrote " + ival + ", read back " + readBack);
 }
 
 function write_F32(bytes as ByteArray, pos as Number, fval as Float) as Void {
@@ -1573,6 +1605,7 @@ function interpret_mvp(module_,
             }
             assert(addr >= 0, null);
             var res;
+            // TODO: USE byteArray.decodeNumber(format, options)
             if (opcode == 0x28) {  // i32.load
                 res = [I32, bytes2uint32(memory.bytes.slice(addr, addr+4)), 0.0];
             } else if (opcode == 0x29) {  // i64.load
@@ -1702,6 +1735,10 @@ function interpret_mvp(module_,
             pc = result[0];
             var val = result[1];
             sp += 1;
+            if(!(val instanceof Long)) {
+                System.println("i64.const: val is not a Long");
+                val = val.toLong();
+            }
             stack[sp] = [I64, val, 0.0];
             if (TRACE) {
                 debug("      - " + value_repr(stack[sp]));
