@@ -780,22 +780,36 @@ function int2int32(i) {
 
 //
 
-function bytes2uint64(b) {
-    return ((b[7] << 56) + (b[6] << 48) + (b[5] << 40) + (b[4] << 32) +
-            (b[3] << 24) + (b[2] << 16) + (b[1] << 8) + b[0]);
+function uint642bytes(v as Long) as Array<Number> {
+    if(!(v instanceof Long)) {
+        System.println("uint642bytes: input is not a Long");
+        v = v.toLong();
+    }
+    var result = [
+        (v & 0xff).toNumber(),
+        ((v >> 8) & 0xff).toNumber(),
+        ((v >> 16) & 0xff).toNumber(),
+        ((v >> 24) & 0xff).toNumber(),
+        ((v >> 32) & 0xff).toNumber(),
+        ((v >> 40) & 0xff).toNumber(),
+        ((v >> 48) & 0xff).toNumber(),
+        ((v >> 56) & 0xff).toNumber()
+    ];
+    System.println("uint642bytes: input=" + v + ", output=" + result);
+    return result;
 }
 
-function uint642bytes(v) {
-    return [
-        0xff & v,
-        0xff & (v >> 8),
-        0xff & (v >> 16),
-        0xff & (v >> 24),
-        0xff & (v >> 32),
-        0xff & (v >> 40),
-        0xff & (v >> 48),
-        0xff & (v >> 56)
-    ];
+function bytes2uint64(b as Array<Number>) as Long {
+    var result = (b[7].toLong() << 56) |
+           (b[6].toLong() << 48) |
+           (b[5].toLong() << 40) |
+           (b[4].toLong() << 32) |
+           (b[3].toLong() << 24) |
+           (b[2].toLong() << 16) |
+           (b[1].toLong() << 8) |
+           b[0].toLong();
+    System.println("bytes2uint64: input=" + b + ", output=" + result);
+    return result;
 }
 
 function bytes2int64(b) {
@@ -857,9 +871,11 @@ function read_I32(bytes, pos) {
     return bytes.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
 }
 
-function read_I64(bytes, pos) {
+function read_I64(bytes as ByteArray, pos as Number) as Long {
     assert(pos >= 0, null);
-    return bytes2uint64(bytes.slice(pos, pos + 8));
+    var slice = bytes.slice(pos, pos + 8);
+    System.println("read_I64: pos=" + pos + ", slice=" + slice);
+    return bytes2uint64(slice);
 }
 
 function read_F32(bytes, pos) {
@@ -878,9 +894,20 @@ function write_I32(bytes as ByteArray, pos as Number, ival as Number) as Void {
     bytes.encodeNumber(ival, Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
 }
 
-function write_I64(bytes as ByteArray, pos as Number, ival as Number) as Void {
-    throw new NotImplementedException();
-    // bytes[pos:pos + 8] = uint642bytes(ival);
+
+function write_I64(bytes as ByteArray, pos as Number, ival as Long) as Void {
+    System.println("write_I64: pos=" + pos + ", ival=" + ival);
+    
+    var byteArray = uint642bytes(ival);
+    
+    for (var i = 0; i < 8; i++) {
+        bytes[pos + i] = byteArray[i];
+    }
+
+    System.println("write_I64: Bytes written: " + bytes.slice(pos, pos + 8));
+
+    var num = read_I64(bytes, pos);
+    System.println("write_I64: Wrote " + ival + ", read back " + num);
 }
 
 function write_F32(bytes as ByteArray, pos as Number, fval as Float) as Void {
@@ -901,14 +928,9 @@ function value_repr(val as Array) as String {
     var vtn = VALUE_TYPE[vt];
     
     if (vtn.equals("i32") || vtn.equals("i64")) {
-        return Lang.format("0x$1$:$2$", [ival.format("%x"), vtn]);
+        return Lang.format("$1$:$2$", [ival.toString(), vtn]);
     } else if (vtn.equals("f32") || vtn.equals("f64")) {
-        var str = fval.format("%.7f");
-        if (str.find(".") == -1) {
-            return Lang.format("$1$:$2$", [fval.format("%f"), vtn]);
-        } else {
-            return Lang.format("$1$:$2$", [str, vtn]);
-        }
+        return Lang.format("$1$:$2$", [fval.format("%.7f"), vtn]);
     } else {
         throw new WAException("unknown value type " + vtn);
     }
@@ -1154,14 +1176,15 @@ function popBlock(stack as StackType, callstack as CallStackType, sp as Number, 
 function do_call(stack as StackType, callstack as CallStackType, sp as Number, fp as Number, csp as Number, func as Function, pc as Number, indirect as Boolean) as Array<Number> {
     // Push block, stack size and return address onto callstack
     var t = func.type;
-    // System.println("do_call: Setting return address to 0x" + pc.format("%x"));
+    if (TRACE) {
+        System.println("do_call: Setting return address to 0x" + pc.format("%x"));
+    }
     csp += 1;
     callstack[csp] = [func, sp - t.params.size(), fp, pc];
-    // System.println("do_call: pc:" + pc + ", " + callstackRepr(csp, callstack));
 
     // Update the pos/instruction counter to the function
     pc = func.start;
-    // System.println("do_call: pc: 0x" + pc.format("%x"));
+    System.println("do_call: pc: 0x" + pc.format("%x"));
 
     if (TRACE) {
         info(Lang.format("  Calling function 0x$1$, start: 0x$2$, end: 0x$3$, $4$ locals, $5$ params, $6$ results",
@@ -1583,6 +1606,9 @@ function interpret_mvp(module_,
             }
             sp += 1;
             stack[sp] = res;
+            if (TRACE) {
+                debug("Memory load: addr=" + addr + ", value=" + value_repr(res));
+            }
         }
 
         // Memory store operators
@@ -1632,6 +1658,10 @@ function interpret_mvp(module_,
                 memory.bytes[addr+3] = (val[1] & 0xff000000) >> 24;
             } else {
                 throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+
+            if (TRACE) {
+                debug("Memory store: addr=" + addr.toString() + ", value=" + value_repr(val));
             }
         }
 
@@ -1723,6 +1753,9 @@ function interpret_mvp(module_,
             var a = stack[sp-1];
             var b = stack[sp];
             sp -= 2;
+            if (TRACE) {
+                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
+            }
             var res;
             if (0x46 == opcode) { // i32.eq
                 if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
@@ -1828,6 +1861,9 @@ function interpret_mvp(module_,
             }
             sp += 1;
             stack[sp] = res;
+            if (TRACE) {
+                debug("Post-operation result: res=" + value_repr(res));
+            }
         }
 
 //         #
@@ -1966,6 +2002,9 @@ function interpret_mvp(module_,
             var b = stack[sp];
             sp -= 2;
             if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, "Expected I32"); }
+            if (TRACE) {
+                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
+            }
             var res = [I32, 0, 0.0];
             if (opcode == 0x6a) { // i32.add
                 res[1] = int2int32(a[1] + b[1]);
@@ -2020,7 +2059,9 @@ function interpret_mvp(module_,
             }
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+                debug("Post-operation result: res=" + value_repr(res));
             }
+
             sp += 1;
             stack[sp] = res;
         }
@@ -2030,6 +2071,9 @@ function interpret_mvp(module_,
 //             a, b = stack[sp-1], stack[sp]
 //             sp -= 2
 //             if VALIDATE: assert a[0] == I64 and b[0] == I64
+            // if (TRACE) {
+            //     debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
+            // }
 //             if   0x7c == opcode: # i64.add
 //                 res = (I64, int2int64(a[1] + b[1]), 0.0)
 //             elif 0x7d == opcode: # i64.sub
@@ -2639,7 +2683,7 @@ class Module {
 
         info("Functions:");
         for (var i = 0; i < self.function_.size(); i++) {
-            info("  0x" + i.format("%02x") + " " + funcRepr(self.function_[i]));
+            info("  0x" + i.format("%x") + " " + funcRepr(self.function_[i]));
         }
         info("Tables:");
         if (self.table != null && self.table.size() > 0) {
@@ -2649,9 +2693,9 @@ class Module {
                 var entries = self.table[key];
                 var entryStrings = [];
                 for (var j = 0; j < entries.size(); j++) {
-                    entryStrings.add(entries[j].format("%x"));
+                    entryStrings.add("0x" + entries[j].format("%x"));
                 }
-                info("  0x" + key.format("%02x") + " -> [" + join(entryStrings, ",") + "]");
+                info("  0x" + key.format("%x") + " -> [" + join(entryStrings, ",") + "]");
             }
         } else {
             info("  No tables defined");
@@ -2697,6 +2741,7 @@ class Module {
     }        
 
     public function interpret() as Void {
+        info("interpret: pc: 0x" + self.rdr.pos.format("%x"));
         var result = interpret_mvp(self,
             // Greens
             self.rdr.pos, self.rdr.bytes, self.function_,

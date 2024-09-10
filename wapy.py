@@ -635,6 +635,8 @@ def write_I32(bytes, pos, ival):
     bytes[pos:pos+4] = uint322bytes(ival)
 
 def write_I64(bytes, pos, ival):
+    if TRACE:
+        debug("write_I64: pos=%d, ival=%d" % (pos, ival))
     bytes[pos:pos+8] = uint642bytes(ival)
 
 def write_F32(bytes, pos, fval):
@@ -645,22 +647,17 @@ def write_F64(bytes, pos, fval):
     ival = intmask(pack_f64(fval))
     bytes[pos:pos+8] = uint642bytes(ival)
 
-
 def value_repr(val):
     vt, ival, fval = val
     vtn = VALUE_TYPE[vt]
     if vtn in ('i32', 'i64'):
         if not isinstance(ival, int):
             raise TypeError(f"Expected int for {vtn}, got {type(ival).__name__}")
-        return f"{hex(ival)}:{vtn}"
+        return f"{ival}:{vtn}"
     elif vtn in ('f32', 'f64'):
         if not isinstance(fval, float):
             raise TypeError(f"Expected float for {vtn}, got {type(fval).__name__}")
-        str_val = f"{fval:.7g}"
-        if '.' not in str_val:
-            return f"{fval:.1f}:{vtn}"
-        else:
-            return f"{str_val}:{vtn}"
+        return f"{fval:.7f}:{vtn}"
     else:
         raise ValueError(f"Unknown value type {vtn}")
 
