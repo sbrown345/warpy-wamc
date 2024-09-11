@@ -830,9 +830,7 @@ function int2uint64(i) {
 }
 
 function int2int64(i) {
-    throw new NotImplementedException();
-    // var val = i & 0xffffffffffffffffl;
-    // return (val & 0x8000000000000000l) ? (val - 0x10000000000000000l) : val;
+    return i.toLong();
 }
 
 // https://en.wikipedia.org/wiki/LEB128
@@ -2106,71 +2104,77 @@ function interpret_mvp(module_,
             stack[sp] = res;
         }
 
-//         # i64 binary
-//         elif 0x7c <= opcode <= 0x8a:
-//             a, b = stack[sp-1], stack[sp]
-//             sp -= 2
-//             if VALIDATE: assert a[0] == I64 and b[0] == I64
-            // if (TRACE) {
-            //     debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
-            // }
-//             if   0x7c == opcode: # i64.add
-//                 res = (I64, int2int64(a[1] + b[1]), 0.0)
-//             elif 0x7d == opcode: # i64.sub
-//                 res = (I64, a[1] - b[1], 0.0)
-//             elif 0x7e == opcode: # i64.mul
-//                 res = (I64, int2int64(a[1] * b[1]), 0.0)
-//             elif 0x7f == opcode: # i64.div_s
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-// #                elif a[1] == 0x8000000000000000 and b[1] == -1:
-// #                    raise WAException("integer overflow")
-//                 else:
-//                     res = (I64, idiv_s(int2int64(a[1]), int2int64(b[1])), 0.0)
-//             elif 0x80 == opcode: # i64.div_u
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 else:
-//                     if a[1] < 0 and b[1] > 0:
-//                         res = (I64, int2uint64(-a[1]) / int2uint64(b[1]), 0.0)
-//                     elif a[1] > 0 and b[1] < 0:
-//                         res = (I64, int2uint64(a[1]) / int2uint64(-b[1]), 0.0)
-//                     else:
-//                         res = (I64, int2uint64(a[1]) / int2uint64(b[1]), 0.0)
-//             elif 0x81 == opcode: # i64.rem_s
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 else:
-//                     res = (I64, irem_s(int2int64(a[1]), int2int64(b[1])), 0.0)
-//             elif 0x82 == opcode: # i64.rem_u
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 else:
-//                     res = (I64, int2uint64(a[1]) % int2uint64(b[1]), 0.0)
-//             elif 0x83 == opcode: # i64.and
-//                 res = (I64, a[1] & b[1], 0.0)
-//             elif 0x84 == opcode: # i64.or
-//                 res = (I64, a[1] | b[1], 0.0)
-//             elif 0x85 == opcode: # i64.xor
-//                 res = (I64, a[1] ^ b[1], 0.0)
-//             elif 0x86 == opcode: # i64.shl
-//                 res = (I64, a[1] << (b[1] % 0x40), 0.0)
-//             elif 0x87 == opcode: # i64.shr_s
-//                 res = (I64, int2int64(a[1]) >> (b[1] % 0x40), 0.0)
-//             elif 0x88 == opcode: # i64.shr_u
-//                 res = (I64, int2uint64(a[1]) >> (b[1] % 0x40), 0.0)
-// #            elif 0x89 == opcode: # i64.rotl
-// #                res = (I64, rotl64(a[1], b[1]), 0.0)
-// #            elif 0x8a == opcode: # i64.rotr
-// #                res = (I64, rotr64(a[1], b[1]), 0.0)
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s, %s) = %s" % (
-//                     value_repr(a), value_repr(b), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
+        // i64 binary
+        else if (0x7c <= opcode && opcode <= 0x8a) {
+            var a = stack[sp-1];
+            var b = stack[sp];
+            sp -= 2;
+            if (VALIDATE) {
+                if (a[0] != I64 || b[0] != I64) {
+                    throw new WAException("Type mismatch: expected I64");
+                }
+            }
+            if (TRACE) {
+                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
+            }
+            var res;
+            if (opcode == 0x7c) { // i64.add
+                res = [I64, int2int64(a[1] + b[1]), 0.0];
+            } else if (opcode == 0x7d) { // i64.sub
+                res = [I64, a[1] - b[1], 0.0];
+            } else if (opcode == 0x7e) { // i64.mul
+                res = [I64, int2int64(a[1] * b[1]), 0.0];
+            } else if (opcode == 0x7f) { // i64.div_s
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    res = [I64, idiv_s(int2int64(a[1]), int2int64(b[1])), 0.0];
+                }
+            } else if (opcode == 0x80) { // i64.div_u
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    if (a[1] < 0 && b[1] > 0) {
+                        res = [I64, int2uint64(-a[1]) / int2uint64(b[1]), 0.0];
+                    } else if (a[1] > 0 && b[1] < 0) {
+                        res = [I64, int2uint64(a[1]) / int2uint64(-b[1]), 0.0];
+                    } else {
+                        res = [I64, int2uint64(a[1]) / int2uint64(b[1]), 0.0];
+                    }
+                }
+            } else if (opcode == 0x81) { // i64.rem_s
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    res = [I64, irem_s(int2int64(a[1]), int2int64(b[1])), 0.0];
+                }
+            } else if (opcode == 0x82) { // i64.rem_u
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    res = [I64, int2uint64(a[1]) % int2uint64(b[1]), 0.0];
+                }
+            } else if (opcode == 0x83) { // i64.and
+                res = [I64, a[1] & b[1], 0.0];
+            } else if (opcode == 0x84) { // i64.or
+                res = [I64, a[1] | b[1], 0.0];
+            } else if (opcode == 0x85) { // i64.xor
+                res = [I64, a[1] ^ b[1], 0.0];
+            } else if (opcode == 0x86) { // i64.shl
+                res = [I64, a[1] << (b[1] % 0x40), 0.0];
+            } else if (opcode == 0x87) { // i64.shr_s
+                res = [I64, int2int64(a[1]) >> (b[1] % 0x40), 0.0];
+            } else if (opcode == 0x88) { // i64.shr_u
+                res = [I64, int2uint64(a[1]) >> (b[1] % 0x40), 0.0];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
 
 //         # f32 binary operations
 //         elif 0x92 <= opcode <= 0x98:
