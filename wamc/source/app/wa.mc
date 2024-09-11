@@ -2273,160 +2273,109 @@ function interpret_mvp(module_,
 //                     value_repr(a), value_repr(b), value_repr(res)))
 //             sp += 1
 //             stack[sp] = res
+        // conversion operations
+        else if (0xa7 <= opcode && opcode <= 0xbb) {
+            var a = stack[sp];
+            sp -= 1;
 
-//         ## conversion operations
-//         elif 0xa7 <= opcode <= 0xbb:
-//             a = stack[sp]
-//             sp -= 1
+            var res;
 
-//             # conversion operations
-//             if   0xa7 == opcode: # i32.wrap_i64
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (I32, int2int32(a[1]), 0.0)
-//             elif 0xa8 == opcode: # i32.trunc_f32_s
-//                 if VALIDATE: assert a[0] == F32
-//                 if math.isnan(a[2]):
-//                     raise WAException("invalid conversion to integer")
-//                 elif a[2] > 2147483647.0:
-//                     raise WAException("integer overflow")
-//                 elif a[2] < -2147483648.0:
-//                     raise WAException("integer overflow")
-//                 res = (I32, int(a[2]), 0.0)
-// #            elif 0xa9 == opcode: # i32.trunc_f32_u
-// #                if VALIDATE: assert a[0] == F32
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 4294967295.0:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] <= -1.0:
-// #                    raise WAException("integer overflow")
-// #                res = (I32, int(a[2]), 0.0)
-// #            elif 0xaa == opcode: # i32.trunc_f64_s
-// #                if VALIDATE: assert a[0] == F64
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**31-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] < -2**31:
-// #                    raise WAException("integer overflow")
-// #                res = (I32, int(a[2]), 0.0)
-// #            elif 0xab == opcode: # i32.trunc_f64_u
-// #                if VALIDATE: assert a[0] == F64
-// #                debug("*** a[2]: %s" % a[2])
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**32-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] <= -1.0:
-// #                    raise WAException("integer overflow")
-// #                res = (I32, int(a[2]), 0.0)
-//             elif 0xac == opcode: # i64.extend_i32_s
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (I64, int2int32(a[1]), 0.0)
-//             elif 0xad == opcode: # i64.extend_i32_u
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (I64, intmask(a[1]), 0.0)
-// #            elif 0xae == opcode: # i64.trunc_f32_s
-// #                if VALIDATE: assert a[0] == F32
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**63-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] < -2**63:
-// #                    raise WAException("integer overflow")
-// #                res = (I64, int(a[2]), 0.0)
-// #            elif 0xaf == opcode: # i64.trunc_f32_u
-// #                if VALIDATE: assert a[0] == F32
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**63-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] <= -1.0:
-// #                    raise WAException("integer overflow")
-// #                res = (I64, int(a[2]), 0.0)
-//             elif 0xb0 == opcode: # i64.trunc_f64_s
-//                 if VALIDATE: assert a[0] == F64
-//                 if math.isnan(a[2]):
-//                     raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**63-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] < -2**63:
-// #                    raise WAException("integer overflow")
-//                 res = (I64, int(a[2]), 0.0)
-//             elif 0xb1 == opcode: # i64.trunc_f64_u
-//                 if VALIDATE: assert a[0] == F64
-//                 if math.isnan(a[2]):
-//                     raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**63-1:
-// #                    raise WAException("integer overflow")
-//                 elif a[2] <= -1.0:
-//                     raise WAException("integer overflow")
-//                 res = (I64, int(a[2]), 0.0)
-//             elif 0xb2 == opcode: # f32.convert_i32_s
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (F32, 0, float(a[1]))
-//             elif 0xb3 == opcode: # f32.convert_i32_u
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (F32, 0, float(int2uint32(a[1])))
-//             elif 0xb4 == opcode: # f32.convert_i64_s
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F32, 0, float(a[1]))
-//             elif 0xb5 == opcode: # f32.convert_i64_u
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F32, 0, float(int2uint64(a[1])))
-// #            elif 0xb6 == opcode: # f32.demote_f64
-// #                if VALIDATE: assert a[0] == F64
-// #                res = (F32, 0, unpack_f32(pack_f32(a[2])))
-//             elif 0xb7 == opcode: # f64.convert_i32_s
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (F64, 0, float(a[1]))
-//             elif 0xb8 == opcode: # f64.convert_i32_u
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (F64, 0, float(int2uint32(a[1])))
-//             elif 0xb9 == opcode: # f64.convert_i64_s
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F64, 0, float(a[1]))
-//             elif 0xba == opcode: # f64.convert_i64_u
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F64, 0, float(int2uint64(a[1])))
-//             elif 0xbb == opcode: # f64.promote_f32
-//                 if VALIDATE: assert a[0] == F32
-//                 res = (F64, 0, a[2])
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s) = %s" % (
-//                     value_repr(a), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
+            // conversion operations
+            if (0xa7 == opcode) { // i32.wrap_i64
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [I32, int2int32(a[1]), 0.0];
+            } else if (0xa8 == opcode) { // i32.trunc_f32_s
+                if (VALIDATE) { assert(a[0] == F32, null); }
+                if (isNaN(a[2])) {
+                    throw new WAException("invalid conversion to integer");
+                } else if (a[2] > 2147483647.0) {
+                    throw new WAException("integer overflow");
+                } else if (a[2] < -2147483648.0) {
+                    throw new WAException("integer overflow");
+                }
+                res = [I32, a[2].toNumber(), 0.0];
+            } else if (0xac == opcode) { // i64.extend_i32_s
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [I64, int2int32(a[1]), 0.0];
+            } else if (0xad == opcode) { // i64.extend_i32_u
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [I64, intmask(a[1]), 0.0];
+            } else if (0xb0 == opcode) { // i64.trunc_f64_s
+                if (VALIDATE) { assert(a[0] == F64, null); }
+                if (isNaN(a[2])) {
+                    throw new WAException("invalid conversion to integer");
+                }
+                res = [I64, a[2].toNumber(), 0.0];
+            } else if (0xb1 == opcode) { // i64.trunc_f64_u
+                if (VALIDATE) { assert(a[0] == F64, null); }
+                if (isNaN(a[2])) {
+                    throw new WAException("invalid conversion to integer");
+                } else if (a[2] <= -1.0) {
+                    throw new WAException("integer overflow");
+                }
+                res = [I64, a[2].toNumber(), 0.0];
+            } else if (0xb2 == opcode) { // f32.convert_i32_s
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [F32, 0, a[1].toFloat()];
+            } else if (0xb3 == opcode) { // f32.convert_i32_u
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [F32, 0, int2uint32(a[1]).toFloat()];
+            } else if (0xb4 == opcode) { // f32.convert_i64_s
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F32, 0, a[1].toFloat()];
+            } else if (0xb5 == opcode) { // f32.convert_i64_u
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F32, 0, int2uint64(a[1]).toFloat()];
+            } else if (0xb7 == opcode) { // f64.convert_i32_s
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [F64, 0, a[1].toDouble()];
+            } else if (0xb8 == opcode) { // f64.convert_i32_u
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [F64, 0, int2uint32(a[1]).toDouble()];
+            } else if (0xb9 == opcode) { // f64.convert_i64_s
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F64, 0, a[1].toDouble()];
+            } else if (0xba == opcode) { // f64.convert_i64_u
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F64, 0, int2uint64(a[1]).toDouble()];
+            } else if (0xbb == opcode) { // f64.promote_f32
+                if (VALIDATE) { assert(a[0] == F32, null); }
+                res = [F64, 0, a[2]];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        // reinterpretations
+        } else if (0xbc <= opcode && opcode <= 0xbf) {
+            var a = stack[sp];
+            sp -= 1;
 
-//         ## reinterpretations
-//         elif 0xbc <= opcode <= 0xbf:
-//             a = stack[sp]
-//             sp -= 1
-
-//             if   0xbc == opcode: # i32.reinterpret_f32
-//                 if VALIDATE: assert a[0] == F32
-//                 res = (I32, intmask(pack_f32(a[2])), 0.0)
-//             elif 0xbd == opcode: # i64.reinterpret_f64
-//                 if VALIDATE: assert a[0] == F64
-//                 res = (I64, intmask(pack_f64(a[2])), 0.0)
-// #            elif 0xbe == opcode: # f32.reinterpret_i32
-// #                if VALIDATE: assert a[0] == I32
-// #                res = (F32, 0, unpack_f32(int2int32(a[1])))
-//             elif 0xbf == opcode: # f64.reinterpret_i64
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F64, 0, unpack_f64(int2int64(a[1])))
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s) = %s" % (
-//                     value_repr(a), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
-        else {
+            var res;
+            if (0xbc == opcode) { // i32.reinterpret_f32
+                if (VALIDATE) { assert(a[0] == F32, null); }
+                res = [I32, intmask(pack_f32(a[2])), 0.0];
+            } else if (0xbd == opcode) { // i64.reinterpret_f64
+                if (VALIDATE) { assert(a[0] == F64, null); }
+                res = [I64, intmask(pack_f64(a[2])), 0.0];
+            // } else if (0xbe == opcode) { // f32.reinterpret_i32
+            //     if (VALIDATE) { assert(a[0] == I32, null); }
+            //     res = [F32, 0, unpack_f32(int2int32(a[1]))];
+            } else if (0xbf == opcode) { // f64.reinterpret_i64
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F64, 0, unpack_f64(int2int64(a[1]))];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        } else {
             throw new WAException("unrecognized opcode 0x" + opcode.format("%02x") + " (" + OPERATOR_INFO[opcode][0] + ")");
         }
     }
