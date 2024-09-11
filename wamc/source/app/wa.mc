@@ -928,7 +928,6 @@ function write_I32(bytes as ByteArray, pos as Number, ival as Number) as Void {
 function write_I64(bytes as ByteArray, pos as Number, ival as Long) as Void {
     ival = ival.toLong();
     
-    System.println("write_I64: pos=" + pos + ", ival=" + ival);
     
     var low = ival.toNumber() & 0xFFFFFFFF;
     var high = (ival >> 32).toNumber() & 0xFFFFFFFF;
@@ -936,10 +935,14 @@ function write_I64(bytes as ByteArray, pos as Number, ival as Long) as Void {
     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_SINT32, { :offset => pos + 4 });
 
-    System.println("write_I64: Bytes written: " + bytes.slice(pos, pos + 8));
 
     var readBack = read_I64(bytes, pos);
-    System.println("write_I64: Wrote " + ival + ", read back " + readBack);
+    if (readBack != ival) {
+        System.println("write_I64: pos=" + pos + ", ival=" + ival);
+        System.println("write_I64: Bytes written: " + bytes.slice(pos, pos + 8));
+        System.println("write_I64: Wrote " + ival + ", read back " + readBack);
+        throw new WAException("write_I64: Wrote " + ival + ", read back " + readBack);
+    }
 }
 
 function write_F32(bytes as ByteArray, pos as Number, fval as Float) as Void {

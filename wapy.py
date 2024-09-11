@@ -928,6 +928,13 @@ def get_from_table(table, tidx, table_index):
         raise WAException("undefined element")
     return tbl[table_index]
 
+def format_immediate(i):
+    if isinstance(i, int):
+        return f"0x{i:x}"
+    elif isinstance(i, float):
+        return f"{i:.6g}"
+    else:
+        return str(i)
 
 def interpret_mvp(module,
         # Greens
@@ -955,7 +962,7 @@ def interpret_mvp(module,
             info("    0x%x <0x%x/%s%s%s>" % (
                 cur_pc, opcode, OPERATOR_INFO[opcode][0],
                 " " if immediates else "",
-                ",".join(["0x%x" % i for i in immediates])))
+                ",".join([format_immediate(i) for i in immediates])))
 
         #
         # Control flow operators

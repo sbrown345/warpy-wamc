@@ -60,10 +60,10 @@ def main():
     
     # Simple game loop (for demonstration)
     for _ in range(10):  # Run 10 frames
-        if 'update' in m.export_map:
-            m.run('update', [(F64, 0, 0.016)])  # 60 FPS
-        if 'draw' in m.export_map:
-            m.run('draw', [])
+        # if 'update' in m.export_map:
+        m.run('update', [(F64, 0, 0.016)])  # 60 FPS
+        # if 'draw' in m.export_map:
+        m.run('draw', [])
 
 if __name__ == "__main__":
     sys.exit(main())
