@@ -433,8 +433,8 @@ class FunctionImport extends Code {
 const MAGIC as Number = 0x6d736100;
 const VERSION as Number = 0x01;  // MVP
 
-const STACK_SIZE as Number = 32; //65536;
-const CALLSTACK_SIZE as Number = 32; //8192;
+const STACK_SIZE as Number = 512; //65536;
+const CALLSTACK_SIZE as Number = 512; //8192;
 
 enum Types {
     I32     = 0x7f,  // -0x01
@@ -994,7 +994,7 @@ function uint642bytes(v as Long) as Array<Number> {
         ((v >> 48) & 0xff).toNumber(),
         ((v >> 56) & 0xff).toNumber()
     ];
-    System.println("uint642bytes: input=" + v + ", output=" + result);
+    // System.println("uint642bytes: input=" + v + ", output=" + result);
     return result;
 }
 
@@ -1007,7 +1007,7 @@ function bytes2uint64(b as ByteArray) as Long {
            (b[2].toLong() << 16) |
            (b[1].toLong() << 8) |
            b[0].toLong();
-    System.println("bytes2uint64: input=" + b + ", output=" + result);
+    // System.println("bytes2uint64: input=" + b + ", output=" + result);
     if(!(result instanceof Long)) {
         System.println("bytes2uint64: result is not a Long");
         result = result.toLong();
@@ -1033,17 +1033,17 @@ function int2int64(i) {
 }
 
 // https://en.wikipedia.org/wiki/LEB128
-function read_LEB(bytes, pos, maxbits/*=32*/, signed/*=false*/) as [Number, Number] {
-    var result = 0;
+function read_LEB(bytes, pos, maxbits/*=32*/, signed/*=false*/) as [Number, Number or Long] {
+    var result = 0L;
     var shift = 0;
     var bcnt = 0;
     var startpos = pos;
 
-    if(maxbits == null) {
+    if (maxbits == null) {
         maxbits = 32;
     }
 
-    if(signed == null) {
+    if (signed == null) {
         signed = false; 
     }
 
@@ -1051,7 +1051,7 @@ function read_LEB(bytes, pos, maxbits/*=32*/, signed/*=false*/) as [Number, Numb
     while (true) {
         byte = bytes[pos];
         pos += 1;
-        result |= ((byte & 0x7f) << shift);
+        result |= ((byte & 0x7f).toLong() << shift);
         shift += 7;
         if ((byte & 0x80) == 0) {
             break;
@@ -1062,9 +1062,13 @@ function read_LEB(bytes, pos, maxbits/*=32*/, signed/*=false*/) as [Number, Numb
         }
     }
     if (signed && (shift < maxbits) && (byte & 0x40)) {
-        result |= - (1 << shift);
+        result |= ((-1L) << shift);
     }
-    return [pos, result];
+
+    // Convert result to Number if maxbits <= 32, otherwise keep it as Long
+    var finalResult = (maxbits <= 32) ? result.toNumber() : result;
+
+    return [pos, finalResult];
 }
 
 function read_I32(bytes, pos) {
@@ -1086,7 +1090,7 @@ function read_I64(bytes as ByteArray, pos as Number) as Long {
     
     var result = (high.toLong() << 32) | (low.toLong() & 0xFFFFFFFF);
     
-    System.println("read_I64: pos=" + pos + ", low=" + low + ", high=" + high + ", result=" + result);
+    // System.println("read_I64: pos=" + pos + ", low=" + low + ", high=" + high + ", result=" + result);
     return result;
 }
 
@@ -1125,7 +1129,10 @@ function write_I32(bytes as ByteArray, pos as Number, ival as Number) as Void {
 
 function write_I64(bytes as ByteArray, pos as Number, ival as Long) as Void {
     ival = ival.toLong();
-    
+
+    if (TRACE) {
+        System.println("write_I64: pos=" + pos + ", ival=" + ival);
+    }
     
     var low = ival.toNumber() & 0xFFFFFFFF;
     var high = (ival >> 32).toNumber() & 0xFFFFFFFF;
@@ -1136,7 +1143,6 @@ function write_I64(bytes as ByteArray, pos as Number, ival as Long) as Void {
 
     var readBack = read_I64(bytes, pos);
     if (readBack != ival) {
-        System.println("write_I64: pos=" + pos + ", ival=" + ival);
         System.println("write_I64: Bytes written: " + bytes.slice(pos, pos + 8));
         System.println("write_I64: Wrote " + ival + ", read back " + readBack);
         throw new WAException("write_I64: Wrote " + ival + ", read back " + readBack);
@@ -2435,6 +2441,7 @@ function interpret_mvp(module_,
             }
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+                debug("Post-operation result: res=" + value_repr(res));
             }
             sp += 1;
             stack[sp] = res;
@@ -2445,6 +2452,9 @@ function interpret_mvp(module_,
             var b = stack[sp];
             sp -= 2;
             if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
+            if (TRACE) {
+                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
+            }
             var res;
             if (opcode == 0x92) { // f32.add
                 res = [F32, 0, a[2] + b[2]];
@@ -2469,6 +2479,7 @@ function interpret_mvp(module_,
             }
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+                debug("Post-operation result: res=" + value_repr(res));
             }
             sp += 1;
             stack[sp] = res;
@@ -2480,6 +2491,9 @@ function interpret_mvp(module_,
             var b = stack[sp];
             sp -= 2;
             if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
+            if (TRACE) {
+                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
+            }
             var res;
             if (opcode == 0xa0) { // f64.add
                 res = [F64, 0, a[2] + b[2]];
@@ -2510,6 +2524,7 @@ function interpret_mvp(module_,
             }
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+                debug("Post-operation result: res=" + value_repr(res));
             }
             sp += 1;
             stack[sp] = res;

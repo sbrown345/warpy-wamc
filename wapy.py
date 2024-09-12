@@ -658,6 +658,8 @@ def value_repr(val):
         if not isinstance(fval, float):
             raise TypeError(f"Expected float for {vtn}, got {type(fval).__name__}")
         return f"{fval:.7f}:{vtn}"
+    elif vtn == 'bool':
+        return f"{1 if ival else 0}:{vtn}*"  # * means bool, in case it matters later on
     else:
         raise ValueError(f"Unknown value type {vtn}")
 
