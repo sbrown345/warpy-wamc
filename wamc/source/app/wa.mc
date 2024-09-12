@@ -18,6 +18,32 @@ var TRACE = true;
 var DEBUG = true;
 var VALIDATE = true;
 
+function createNaN() as Float {
+    var bytes = new [4]b;
+    bytes[0] = 0x00;
+    bytes[1] = 0x00;
+    bytes[2] = 0xC0;
+    bytes[3] = 0x7F;
+    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0, :endianness => Lang.ENDIAN_LITTLE });
+}
+
+function createPositiveInfinity() as Float {
+    var bytes = new [4]b;
+    bytes[0] = 0x00;
+    bytes[1] = 0x00;
+    bytes[2] = 0x80;
+    bytes[3] = 0x7F;
+    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0, :endianness => Lang.ENDIAN_LITTLE });
+}
+
+function createNegativeInfinity() as Float {
+    var bytes = new [4]b;
+    bytes[0] = 0x00;
+    bytes[1] = 0x00;
+    bytes[2] = 0x80;
+    bytes[3] = 0xFF;
+    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0, :endianness => Lang.ENDIAN_LITTLE });
+}
 
 function do_sort(a as Array) as Array {
     return a.sort(null);
@@ -30,13 +56,14 @@ function unpack_f32(i32 as Number) as Float {
     return packing_temp.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
 }
 
-function unpack_f64(i64 as Long) as Float {
-    var low = (i64 & 0xFFFFFFFF).toNumber();
-    var high = ((i64 >> 32) & 0xFFFFFFFF).toNumber();
+function unpack_f64(i64 as Long) as Double {
+    return bitsToDouble(i64);
+    // var low = (i64 & 0xFFFFFFFF).toNumber();
+    // var high = ((i64 >> 32) & 0xFFFFFFFF).toNumber();
     
-    // Combine low and high into a single float
-    // This will lose precision but is much simpler
-    return low.toFloat() + high.toFloat() * 4294967296.0; // 2^32
+    // // Combine low and high into a single float
+    // // This will lose precision but is much simpler
+    // return low.toFloat() + high.toFloat() * 4294967296.0; // 2^32
 }
 
 function pack_f32(f32 as Float) as Number {
@@ -45,12 +72,67 @@ function pack_f32(f32 as Float) as Number {
 }
 
 function pack_f64(f64 as Double) as Long {
-    // Split the float into two parts
-    var high = Math.floor(f64 / 4294967296.0); // 2^32
-    var low = f64 - (high * 4294967296.0);
-    
-    // Combine into a Long
-    return (high.toLong() << 32) | (low.toLong() & 0xFFFFFFFF);
+    return doubleToBits(f64);
+    // var high = Math.floor(f64 / 4294967296.0); // 2^32
+    // var low = f64 - (high * 4294967296.0);
+    // return (high.toLong() << 32) | (low.toLong() & 0xFFFFFFFF);
+}
+
+function bitsToDouble(bits as Long) as Double {
+    if (bits == 0 || bits == 0x8000000000000000L) {
+        return bits == 0 ? 0.0d : -0.0d;
+    }
+
+    var sign = ((bits >> 63) & 1) == 0 ? 1 : -1;
+    var exponent = ((bits >> 52) & 0x7FF).toNumber() - 1023;
+    var fraction = bits & 0xFFFFFFFFFFFFFL;
+
+    if (exponent == 1024) {
+        if (fraction == 0) {
+            return sign < 0 ? createNegativeInfinity() : createPositiveInfinity();
+        } else {
+            return createNaN();
+        }
+    }
+
+    var result;
+    if (exponent == -1023) {
+        // Subnormal number
+        result = fraction.toDouble() / 4503599627370496.0d * Math.pow(2, -1022);
+    } else {
+        result = (1.0d + fraction.toDouble() / 4503599627370496.0d) * Math.pow(2, exponent);
+    }
+
+    return sign * result;
+}
+
+function doubleToBits(d as Double) as Long {
+    if (d == 0) {
+        return d < 0 ? 0x8000000000000000L : 0;
+    } else if (isNaN(d)) {
+        return 0x7FF8000000000000L;
+    } else if (isInfinite(d)) {
+        return d < 0 ? 0xFFF0000000000000L : 0x7FF0000000000000L;
+    }
+
+    var sign = d < 0 ? 1L : 0L;
+    d = d.abs();
+    var exponent = Math.floor(Math.log(d, 2)).toNumber();
+    var fraction = d / Math.pow(2, exponent) - 1;
+
+    exponent += 1023; // Bias
+
+    if (exponent <= 0) {
+        // Subnormal number
+        fraction = d / Math.pow(2, -1022);
+        exponent = 0;
+    } else if (exponent >= 0x7FF) {
+        // Overflow to infinity
+        return sign == 1 ? 0xFFF0000000000000L : 0x7FF0000000000000L;
+    }
+
+    var bits = (sign << 63) | ((exponent.toLong() & 0x7FF) << 52) | ((fraction * (1L << 52)).toLong() & 0xFFFFFFFFFFFFFL);
+    return bits;
 }
 
 // function pack_f64(f64 as Double) as Long {
@@ -999,8 +1081,8 @@ function read_I32(bytes, pos) {
 
 function read_I64(bytes as ByteArray, pos as Number) as Long {
     assert(pos >= 0, null);
-    var low = bytes.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
-    var high = bytes.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => pos + 4 });
+    var low = bytes.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => pos });
+    var high = bytes.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4 });
     
     var result = (high.toLong() << 32) | (low.toLong() & 0xFFFFFFFF);
     
@@ -1015,9 +1097,10 @@ function read_F32(bytes, pos) {
     return fround(num, 5);
 }
 
-function read_F64(bytes, pos) {
+function read_F64(bytes as ByteArray, pos as Number) as Float {
     assert(pos >= 0, null);
-    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => pos });
+    var long_value = read_I64(bytes, pos);
+    return bitsToDouble(long_value);
 }
 
 function write_I32(bytes as ByteArray, pos as Number, ival as Number) as Void {
@@ -1064,11 +1147,75 @@ function write_F32(bytes as ByteArray, pos as Number, fval as Float) as Void {
     bytes.encodeNumber(fval, Lang.NUMBER_FORMAT_FLOAT, { :offset => pos });
 }
 
+// function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
+//     // Method 1: Split and encode
+//     var high = Math.floor(fval / 4294967296.0).toNumber(); // 2^32
+//     var low = (fval - (high * 4294967296.0)).toNumber();
+
+//     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos, :endianness => Lang.ENDIAN_LITTLE });
+//     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4, :endianness => Lang.ENDIAN_LITTLE });
+
+//     // Method 2: Direct encoding (if available)
+//     bytes.encodeNumber(fval, Lang.NUMBER_FORMAT_DOUBLE, { :offset => pos + 8, :endianness => Lang.ENDIAN_LITTLE });
+
+//     // Log the bytes written
+//     System.println("Bytes written (Method 1):");
+//     for (var i = 0; i < 8; i++) {
+//         System.print(bytes[pos + i].format("%02X") + " ");
+//     }
+//     System.println("");
+
+//     System.println("Bytes written (Method 2):");
+//     for (var i = 0; i < 8; i++) {
+//         System.print(bytes[pos + 8 + i].format("%02X") + " ");
+//     }
+//     System.println("");
+
+//     // Read and log results
+//     var i64_result1 = read_I64(bytes, pos);
+//     var f64_result1 = read_F64(bytes, pos);
+//     var i64_result2 = read_I64(bytes, pos + 8);
+//     var f64_result2 = read_F64(bytes, pos + 8);
+
+//     System.println("Method 1 - read_I64: " + i64_result1);
+//     System.println("Method 1 - read_F64: " + f64_result1);
+//     System.println("Method 2 - read_I64: " + i64_result2);
+//     System.println("Method 2 - read_F64: " + f64_result2);
+// }
+
 function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
-    throw new NotImplementedException();
-    // var ival = intmask(pack_f64(fval));
-    // bytes[pos:pos + 8] = uint642bytes(ival);
+    var bits = doubleToBits(fval);
+    var low = (bits & 0xFFFFFFFF).toNumber();
+    var high = ((bits >> 32) & 0xFFFFFFFF).toNumber();
+
+    bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos, :endianness => Lang.ENDIAN_LITTLE });
+    bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4, :endianness => Lang.ENDIAN_LITTLE });
+
+    if (TRACE) {
+        System.println("write_F64: Original value: " + fval + " isNaN:" + isNaN(fval) + " isInfinite:" + isInfinite(fval));
+        System.println("Bytes written:");
+        for (var i = 0; i < 8; i++) {
+            System.print(bytes[pos + i].format("%02X") + " ");
+        }
+        System.println("");
+
+        var long_value = read_I64(bytes, pos);
+        var result = bitsToDouble(long_value);
+        System.println("Read back value: " + result + " isNaN:" + isNaN(result) + " isInfinite:" + isInfinite(result));
+    }
 }
+
+// function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
+//     // Split the float into two 32-bit parts
+//     var high = Math.floor(fval / 4294967296.0).toNumber(); // 2^32
+//     var low = (fval - (high * 4294967296.0)).toNumber();
+
+//     // Encode the low 32 bits
+//     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos, :endianness => Lang.ENDIAN_LITTLE });
+
+//     // Encode the high 32 bits
+//     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4, :endianness => Lang.ENDIAN_LITTLE });
+// }
 
 
 function value_repr(val as Array) as String {
@@ -2292,104 +2439,81 @@ function interpret_mvp(module_,
             sp += 1;
             stack[sp] = res;
         }
+        // f32 binary operations
+        else if (0x92 <= opcode && opcode <= 0x98) {
+            var a = stack[sp-1];
+            var b = stack[sp];
+            sp -= 2;
+            if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
+            var res;
+            if (opcode == 0x92) { // f32.add
+                res = [F32, 0, a[2] + b[2]];
+            } else if (opcode == 0x93) { // f32.sub
+                res = [F32, 0, a[2] - b[2]];
+            } else if (opcode == 0x94) { // f32.mul
+                res = [F32, 0, a[2] * b[2]];
+            } else if (opcode == 0x95) { // f32.div
+                res = [F32, 0, a[2] / b[2]];
+            } else if (opcode == 0x96) { // f32.min
+                res = [F32, 0, (a[2] < b[2]) ? a[2] : b[2]];
+            } else if (opcode == 0x97) { // f32.max
+                if (a[2] == 0.0 && b[2] == 0.0) {
+                    res = [F32, 0, 0.0];
+                } else {
+                    res = [F32, 0, (a[2] > b[2]) ? a[2] : b[2]];
+                }
+            } else if (opcode == 0x98) { // f32.copysign
+                res = [F32, 0, (b[2] > 0) ? Math.abs(a[2]) : -Math.abs(a[2])];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
 
-//         # f32 binary operations
-//         elif 0x92 <= opcode <= 0x98:
-//             a, b = stack[sp-1], stack[sp]
-//             sp -= 2
-//             if VALIDATE: assert a[0] == F32 and b[0] == F32
-//             if   0x92 == opcode: # f32.add
-//                 res = (F32, 0, a[2] + b[2])
-//             elif 0x93 == opcode: # f32.sub
-//                 res = (F32, 0, a[2] - b[2])
-//             elif 0x94 == opcode: # f32.mul
-//                 res = (F32, 0, a[2] * b[2])
-//             elif 0x95 == opcode: # f32.div
-//                 res = (F32, 0, a[2] / b[2])
-//             elif 0x96 == opcode: # f32.min
-//                 if a[2] < b[2]:
-//                     res = (F32, 0, a[2])
-//                 else:
-//                     res = (F32, 0, b[2])
-//             elif 0x97 == opcode: # f32.max
-//                 if a[2] == b[2] == 0.0:
-//                     res = (F32, 0, 0.0)
-//                 elif a[2] > b[2]:
-//                     res = (F32, 0, a[2])
-//                 else:
-//                     res = (F32, 0, b[2])
-//             elif 0x98 == opcode: # f32.copysign
-//                 if b[2] > 0:
-//                     res = (F32, 0, abs(a[2]))
-//                 else:
-//                     res = (F32, 0, -abs(a[2]))
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s, %s) = %s" % (
-//                     value_repr(a), value_repr(b), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
-
-//         # f64 binary operations
-//         elif 0xa0 <= opcode <= 0xa6:
-//             a, b = stack[sp-1], stack[sp]
-//             sp -= 2
-//             if VALIDATE: assert a[0] == F64 and b[0] == F64
-//             if   0xa0 == opcode: # f64.add
-//                 res = (F64, 0, a[2] + b[2])
-//             elif 0xa1 == opcode: # f64.sub
-//                 res = (F64, 0, a[2] - b[2])
-//             elif 0xa2 == opcode: # f64.mul
-//                 res = (F64, 0, a[2] * b[2])
-//             elif 0xa3 == opcode: # f64.div
-//                 if b[2] == 0.0:
-//                     aneg = str(a[2])[0] == '-'
-//                     bneg = str(b[2])[0] == '-'
-//                     if (aneg and not bneg) or (not aneg and bneg):
-//                         res = (F64, 0, float_fromhex('-inf'))
-//                     else:
-//                         res = (F64, 0, float_fromhex('inf'))
-//                 else:
-//                     res = (F64, 0, a[2] / b[2])
-//             elif 0xa4 == opcode: # f64.min
-//                 if a[2] < b[2]:
-//                     res = (F64, 0, a[2])
-// # Adding the 0.0 checks causes this error during compilation:
-// #   File "/opt/pypy/rpython/jit/codewriter/assembler.py", line 230, in check_result
-// #       assert self.count_regs['int'] + len(self.constants_i) <= 256
-
-// #                elif b[2] == 0.0:
-// #                    if str(a[2])[0] == '-':
-// #                        res = (F64, 0, a[2])
-// #                    else:
-// #                        res = (F64, 0, b[2])
-//                 else:
-//                     res = (F64, 0, b[2])
-//             elif 0xa5 == opcode: # f64.max
-//                 if a[2] > b[2]:
-//                     res = (F64, 0, a[2])
-// #                elif b[2] == 0.0:
-// #                    if str(a[2])[0] == '-':
-// #                        res = (F64, 0, b[2])
-// #                    else:
-// #                        res = (F64, 0, a[2])
-//                 else:
-//                     res = (F64, 0, b[2])
-//             elif 0xa6 == opcode: # f64.copysign
-//                 if b[2] > 0:
-//                     res = (F64, 0, abs(a[2]))
-//                 else:
-//                     res = (F64, 0, -abs(a[2]))
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s, %s) = %s" % (
-//                     value_repr(a), value_repr(b), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
+        // f64 binary operations
+        else if (0xa0 <= opcode && opcode <= 0xa6) {
+            var a = stack[sp-1];
+            var b = stack[sp];
+            sp -= 2;
+            if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
+            var res;
+            if (opcode == 0xa0) { // f64.add
+                res = [F64, 0, a[2] + b[2]];
+            } else if (opcode == 0xa1) { // f64.sub
+                res = [F64, 0, a[2] - b[2]];
+            } else if (opcode == 0xa2) { // f64.mul
+                res = [F64, 0, a[2] * b[2]];
+            } else if (opcode == 0xa3) { // f64.div
+                if (b[2] == 0.0) {
+                    var aneg = (a[2].toString().substring(0, 1) == "-");
+                    var bneg = (b[2].toString().substring(0, 1) == "-");
+                    if ((aneg && !bneg) || (!aneg && bneg)) {
+                        res = [F64, 0, createNegativeInfinity()];
+                    } else {
+                        res = [F64, 0, createPositiveInfinity()];
+                    }
+                } else {
+                    res = [F64, 0, a[2] / b[2]];
+                }
+            } else if (opcode == 0xa4) { // f64.min
+                res = [F64, 0, (a[2] < b[2]) ? a[2] : b[2]];
+            } else if (opcode == 0xa5) { // f64.max
+                res = [F64, 0, (a[2] > b[2]) ? a[2] : b[2]];
+            } else if (opcode == 0xa6) { // f64.copysign
+                res = [F64, 0, (b[2] > 0) ? Math.abs(a[2]) : -Math.abs(a[2])];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
         // conversion operations
         else if (0xa7 <= opcode && opcode <= 0xbb) {
             var a = stack[sp];
