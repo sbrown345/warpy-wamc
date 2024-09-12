@@ -23,14 +23,131 @@ function do_sort(a as Array) as Array {
     return a.sort(null);
 }
 
-// def unpack_f32(i32):
-//     return struct.unpack('f', struct.pack('i', i32))[0]
-// def unpack_f64(i64):
-//     return struct.unpack('d', struct.pack('q', i64))[0]
-// def pack_f32(f32):
-//     return struct.unpack('i', struct.pack('f', f32))[0]
-// def pack_f64(f64):
-//     return struct.unpack('q', struct.pack('d', f64))[0]
+var packing_temp = new [8]b;
+
+function unpack_f32(i32 as Number) as Float {
+    packing_temp.encodeNumber(i32, Lang.NUMBER_FORMAT_SINT32, { :offset => 0 });
+    return packing_temp.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
+}
+
+function unpack_f64(i64 as Long) as Float {
+    var low = (i64 & 0xFFFFFFFF).toNumber();
+    var high = ((i64 >> 32) & 0xFFFFFFFF).toNumber();
+    
+    // Combine low and high into a single float
+    // This will lose precision but is much simpler
+    return low.toFloat() + high.toFloat() * 4294967296.0; // 2^32
+}
+
+function pack_f32(f32 as Float) as Number {
+    packing_temp.encodeNumber(f32, Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
+    return packing_temp.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => 0 });
+}
+
+function pack_f64(f64 as Double) as Long {
+    // Split the float into two parts
+    var high = Math.floor(f64 / 4294967296.0); // 2^32
+    var low = f64 - (high * 4294967296.0);
+    
+    // Combine into a Long
+    return (high.toLong() << 32) | (low.toLong() & 0xFFFFFFFF);
+}
+
+// function pack_f64(f64 as Double) as Long {
+//     packing_temp.encodeNumber(f64, Lang.NUMBER_FORMAT_DOUBLE, { :offset => 0 });
+//     var low = packing_temp.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => 0 });
+//     var high = packing_temp.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => 4 });
+//     return (high.toLong() << 32) | low.toLong();
+// }
+
+// function pack_f64(f64 as Float) as Long {
+//     packing_temp.encodeNumber(f64.toFloat(), Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
+//     var low = packing_temp.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => 0 });
+//     var high = packing_temp.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => 4 });
+//     return (high.toLong() << 32) | low.toLong();
+// }
+
+
+// function unpack_f64(i64 as Long) as Float {
+//     var bytes = new [8]b;
+//     for (var i = 0; i < 8; i++) {
+//         bytes[i] = ((i64 >> (i * 8)) & 0xFF).toNumber();
+//     }
+    
+//     // Extract sign, exponent, and fraction
+//     var sign = (bytes[7] & 0x80) != 0 ? -1 : 1;
+//     var exponent = ((bytes[7] & 0x7F) << 4) | ((bytes[6] & 0xF0) >> 4);
+//     var fraction = 0.0;
+    
+//     // Calculate fraction
+//     for (var i = 0; i < 6; i++) {
+//         fraction += bytes[i] * Math.pow(2, -48 + (i * 8));
+//     }
+//     fraction += (bytes[6] & 0x0F) * Math.pow(2, -4);
+    
+//     // Handle special cases
+//     if (exponent == 0) {
+//         if (fraction == 0.0) {
+//             return sign * 0.0; // Zero
+//         } else {
+//             return sign * fraction * Math.pow(2, -1022); // Subnormal
+//         }
+//     } else if (exponent == 0x7FF) {
+//         if (fraction == 0.0) {
+//             return sign * Float.INFINITY; // Infinity
+//         } else {
+//             return Float.NaN; // NaN
+//         }
+//     }
+    
+//     // Normal number
+//     return sign * (1.0 + fraction) * Math.pow(2, exponent - 1023);
+// }
+
+// function pack_f64(f64 as Float) as Long {
+//     var bytes = new [8]b;
+    
+//     if (f64 == 0.0) {
+//         return 0; // Positive or negative zero
+//     } else if (f64.isNaN()) {
+//         return 0x7FF8000000000000; // NaN
+//     } else if (!f64.isFinite()) {
+//         return f64 < 0 ? 0xFFF0000000000000 : 0x7FF0000000000000; // Infinity
+//     }
+    
+//     var sign = f64 < 0 ? 1 : 0;
+//     f64 = f64.abs();
+//     var exponent = Math.floor(Math.log(f64, 2));
+//     var fraction = f64 / Math.pow(2, exponent) - 1;
+    
+//     exponent += 1023; // Bias
+    
+//     if (exponent <= 0) {
+//         // Subnormal number
+//         fraction = fraction * Math.pow(2, exponent);
+//         exponent = 0;
+//     } else if (exponent >= 0x7FF) {
+//         // Overflow to infinity
+//         return sign == 1 ? 0xFFF0000000000000 : 0x7FF0000000000000;
+//     }
+    
+//     // Pack the bytes
+//     bytes[7] = (sign << 7) | ((exponent >> 4) & 0x7F);
+//     bytes[6] = ((exponent & 0x0F) << 4) | ((fraction * 16) & 0x0F);
+//     for (var i = 5; i >= 0; i--) {
+//         fraction *= 256;
+//         bytes[i] = fraction & 0xFF;
+//         fraction -= bytes[i];
+//     }
+    
+//     // Convert bytes to Long
+//     var result = 0L;
+//     for (var i = 0; i < 8; i++) {
+//         result |= (bytes[i].toLong() << (i * 8));
+//     }
+//     return result;
+// }
+
 
 function intmask(i) {return i;}
 
