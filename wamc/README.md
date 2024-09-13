@@ -8,6 +8,7 @@ python wapy.py test/addTwo.wasm addTwo 1 2 &> wapy-addTwo,1,2.log
 
 python wapy_parse.py wamc/test/rocket.wasm --generate-monkeyc
 python rocket.py &> rocket-py.log
+python trim_log.py rocket-mc.log rocket-py.log "Running function 'resize'"
 ```
 
 ## Todo

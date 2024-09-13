@@ -650,7 +650,9 @@ def write_F64(bytes, pos, fval):
 def value_repr(val):
     vt, ival, fval = val
     vtn = VALUE_TYPE[vt]
-    if vtn in ('i32', 'i64'):
+    if isinstance(val, tuple) and len(val) == 3 and isinstance(val[1], bool):
+        return f"{1 if val[1] else 0}:{vtn}"
+    elif vtn in ('i32', 'i64'):
         if not isinstance(ival, int):
             raise TypeError(f"Expected int for {vtn}, got {type(ival).__name__}")
         return f"{ival}:{vtn}"
@@ -658,8 +660,6 @@ def value_repr(val):
         if not isinstance(fval, float):
             raise TypeError(f"Expected float for {vtn}, got {type(fval).__name__}")
         return f"{fval:.7f}:{vtn}"
-    elif vtn == 'bool':
-        return f"{1 if ival else 0}:{vtn}*"  # * means bool, in case it matters later on
     else:
         raise ValueError(f"Unknown value type {vtn}")
 
@@ -850,7 +850,7 @@ def do_call(stack, callstack, sp, fp, csp, func, pc, indirect=False):
     # Push block, stack size and return address onto callstack
     t = func.type
     if TRACE:
-        info("  do_call: Setting return address to 0x%x" % pc)
+        info("do_call: Setting return address to 0x%x" % pc)
     csp += 1
     callstack[csp] = (func, sp-len(t.params), fp, pc)
 
@@ -954,8 +954,8 @@ def interpret_mvp(module,
 
         operation_count += 1
 
-        # if operation_count > 100:
-        #     break
+        if operation_count > 320:
+            exit(0)
 
         if TRACE:
             info("operation_count: %d" % operation_count)
@@ -1336,8 +1336,6 @@ def interpret_mvp(module,
         elif 0x46 <= opcode <= 0x66:
             a, b = stack[sp-1], stack[sp]
             sp -= 2
-            if TRACE:
-                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x46 == opcode: # i32.eq
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
                 res = (I32, a[1] == b[1], 0.0)
@@ -1442,8 +1440,6 @@ def interpret_mvp(module,
                     value_repr(a), value_repr(b), value_repr(res)))
             sp += 1
             stack[sp] = res
-            if TRACE:
-                debug(f"Post-operation result: res={value_repr(res)}")
 
         #
         # Numeric operators
@@ -1584,8 +1580,6 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == I32 and b[0] == I32
-            if TRACE:
-                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x6a == opcode: # i32.add
                 res = (I32, int2int32(a[1] + b[1]), 0.0)
             elif 0x6b == opcode: # i32.sub
@@ -1636,7 +1630,6 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
-                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1645,8 +1638,6 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == I64 and b[0] == I64
-            if TRACE:
-                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x7c == opcode: # i64.add
                 res = (I64, int2int64(a[1] + b[1]), 0.0)
             elif 0x7d == opcode: # i64.sub
@@ -1702,7 +1693,6 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
-                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1711,8 +1701,6 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == F32 and b[0] == F32
-            if TRACE:
-                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0x92 == opcode: # f32.add
                 res = (F32, 0, a[2] + b[2])
             elif 0x93 == opcode: # f32.sub
@@ -1744,7 +1732,6 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
-                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1753,8 +1740,6 @@ def interpret_mvp(module,
             a, b = stack[sp-1], stack[sp]
             sp -= 2
             if VALIDATE: assert a[0] == F64 and b[0] == F64
-            if TRACE:
-                debug(f"Pre-operation check: a={value_repr(a)}, b={value_repr(b)}")
             if   0xa0 == opcode: # f64.add
                 res = (F64, 0, a[2] + b[2])
             elif 0xa1 == opcode: # f64.sub
@@ -1806,7 +1791,6 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
-                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1814,7 +1798,7 @@ def interpret_mvp(module,
         elif 0xa7 <= opcode <= 0xbb:
             a = stack[sp]
             sp -= 1
-
+            
             # conversion operations
             if   0xa7 == opcode: # i32.wrap_i64
                 if VALIDATE: assert a[0] == I64
@@ -1934,7 +1918,6 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s) = %s" % (
                     value_repr(a), value_repr(res)))
-                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 
@@ -1961,7 +1944,6 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s) = %s" % (
                     value_repr(a), value_repr(res)))
-                debug(f"Post-operation result: res={value_repr(res)}")
             sp += 1
             stack[sp] = res
 

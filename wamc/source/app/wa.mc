@@ -1197,18 +1197,18 @@ function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos, :endianness => Lang.ENDIAN_LITTLE });
     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4, :endianness => Lang.ENDIAN_LITTLE });
 
-    if (TRACE) {
-        System.println("write_F64: Original value: " + fval + " isNaN:" + isNaN(fval) + " isInfinite:" + isInfinite(fval));
-        System.println("Bytes written:");
-        for (var i = 0; i < 8; i++) {
-            System.print(bytes[pos + i].format("%02X") + " ");
-        }
-        System.println("");
+        // if (TRACE) {
+        //     System.println("write_F64: Original value: " + fval + " isNaN:" + isNaN(fval) + " isInfinite:" + isInfinite(fval));
+        //     System.println("Bytes written:");
+        //     for (var i = 0; i < 8; i++) {
+        //         System.print(bytes[pos + i].format("%02X") + " ");
+        //     }
+        //     System.println("");
 
-        var long_value = read_I64(bytes, pos);
-        var result = bitsToDouble(long_value);
-        System.println("Read back value: " + result + " isNaN:" + isNaN(result) + " isInfinite:" + isInfinite(result));
-    }
+        //     var long_value = read_I64(bytes, pos);
+        //     var result = bitsToDouble(long_value);
+        //     System.println("Read back value: " + result + " isNaN:" + isNaN(result) + " isInfinite:" + isInfinite(result));
+        // }
 }
 
 // function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
@@ -1608,7 +1608,15 @@ function interpret_mvp(module_,
             var immediates = skipImmediates(code, curPc)[1];
             var immediateParts = [];
             for (var i = 0; i < immediates.size(); i++) {
-                immediateParts.add("0x" + immediates[i].format("%x"));
+                if (immediates[i] instanceof Float or immediates[i] instanceof Double) {
+                    if (immediates[i].toNumber() == immediates[i]) {
+                        immediateParts.add(immediates[i].format("%d"));
+                    } else {
+                        immediateParts.add(immediates[i].format("%.7f"));
+                    }
+                } else {
+                    immediateParts.add("0x" + immediates[i].format("%x"));
+                }
             }
             info("    0x" + curPc.format("%x") + " <0x" + opcode.format("%x") + "/" + OPERATOR_INFO[opcode][0] +
                  (immediates.size() > 0 ? " " : "") +
@@ -2061,9 +2069,6 @@ function interpret_mvp(module_,
             var a = stack[sp-1];
             var b = stack[sp];
             sp -= 2;
-            if (TRACE) {
-                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
-            }
             var res;
             if (0x46 == opcode) { // i32.eq
                 if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, null); }
@@ -2169,9 +2174,6 @@ function interpret_mvp(module_,
             }
             sp += 1;
             stack[sp] = res;
-            if (TRACE) {
-                debug("Post-operation result: res=" + value_repr(res));
-            }
         }
 
 //         #
@@ -2310,9 +2312,6 @@ function interpret_mvp(module_,
             var b = stack[sp];
             sp -= 2;
             if (VALIDATE) { assert(a[0] == I32 && b[0] == I32, "Expected I32"); }
-            if (TRACE) {
-                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
-            }
             var res = [I32, 0, 0.0];
             if (opcode == 0x6a) { // i32.add
                 res[1] = int2int32(a[1] + b[1]);
@@ -2367,7 +2366,6 @@ function interpret_mvp(module_,
             }
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
-                debug("Post-operation result: res=" + value_repr(res));
             }
 
             sp += 1;
@@ -2383,9 +2381,6 @@ function interpret_mvp(module_,
                 if (a[0] != I64 || b[0] != I64) {
                     throw new WAException("Type mismatch: expected I64");
                 }
-            }
-            if (TRACE) {
-                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
             }
             var res;
             if (opcode == 0x7c) { // i64.add
@@ -2435,13 +2430,12 @@ function interpret_mvp(module_,
             } else if (opcode == 0x87) { // i64.shr_s
                 res = [I64, int2int64(a[1]) >> (b[1] % 0x40), 0.0];
             } else if (opcode == 0x88) { // i64.shr_u
-                res = [I64, int2uint64(a[1]) >> (b[1] % 0x40), 0.0];
+                res = [I64, i64_shr_u(a[1], b[1] % 0x40), 0.0];
             } else {
                 throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
             }
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
-                debug("Post-operation result: res=" + value_repr(res));
             }
             sp += 1;
             stack[sp] = res;
@@ -2452,9 +2446,6 @@ function interpret_mvp(module_,
             var b = stack[sp];
             sp -= 2;
             if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
-            if (TRACE) {
-                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
-            }
             var res;
             if (opcode == 0x92) { // f32.add
                 res = [F32, 0, a[2] + b[2]];
@@ -2479,7 +2470,6 @@ function interpret_mvp(module_,
             }
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
-                debug("Post-operation result: res=" + value_repr(res));
             }
             sp += 1;
             stack[sp] = res;
@@ -2491,9 +2481,6 @@ function interpret_mvp(module_,
             var b = stack[sp];
             sp -= 2;
             if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
-            if (TRACE) {
-                debug("Pre-operation check: a=" + value_repr(a) + ", b=" + value_repr(b));
-            }
             var res;
             if (opcode == 0xa0) { // f64.add
                 res = [F64, 0, a[2] + b[2]];
@@ -2524,7 +2511,6 @@ function interpret_mvp(module_,
             }
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
-                debug("Post-operation result: res=" + value_repr(res));
             }
             sp += 1;
             stack[sp] = res;
@@ -2533,7 +2519,7 @@ function interpret_mvp(module_,
         else if (0xa7 <= opcode && opcode <= 0xbb) {
             var a = stack[sp];
             sp -= 1;
-
+            
             var res;
 
             // conversion operations
@@ -2600,6 +2586,7 @@ function interpret_mvp(module_,
             } else {
                 throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
             }
+            
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ") = " + value_repr(res));
             }
