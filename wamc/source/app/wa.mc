@@ -24,7 +24,7 @@ function createNaN() as Float {
     bytes[1] = 0x00;
     bytes[2] = 0xC0;
     bytes[3] = 0x7F;
-    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0, :endianness => Lang.ENDIAN_LITTLE });
+    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
 }
 
 function createPositiveInfinity() as Float {
@@ -33,7 +33,7 @@ function createPositiveInfinity() as Float {
     bytes[1] = 0x00;
     bytes[2] = 0x80;
     bytes[3] = 0x7F;
-    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0, :endianness => Lang.ENDIAN_LITTLE });
+    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
 }
 
 function createNegativeInfinity() as Float {
@@ -42,7 +42,7 @@ function createNegativeInfinity() as Float {
     bytes[1] = 0x00;
     bytes[2] = 0x80;
     bytes[3] = 0xFF;
-    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0, :endianness => Lang.ENDIAN_LITTLE });
+    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
 }
 
 function do_sort(a as Array) as Array {
@@ -916,9 +916,19 @@ function rotl32(a, cnt) {
     return ((a << (cnt % 0x20)) & 0xffffffff) | (a >> (0x20 - (cnt % 0x20)));
 }
 
-function rotr32(a, cnt) {
-    return (a >> (cnt % 0x20)) | ((a << (0x20 - (cnt % 0x20))) & 0xffffffff);
+function rotr32(a as Number, cnt as Number) as Number {
+    var n = a;
+    var c = cnt % 32;
+    for (var i = 0; i < c; i++) {
+        var lowBit = n & 0x1;
+        n = (n >> 1) & 0x7FFFFFFF;  // Shift right and clear the sign bit
+        if (lowBit) {
+            n |= 0x80000000;  // Set the highest bit if the lowest bit was 1
+        }
+    }
+    return n;
 }
+
 
 function rotl64(a, cnt) {
     return ((a << (cnt % 0x40)) & 0xffffffffffffffffl) | (a >> (0x40 - (cnt % 0x40)));
@@ -1158,11 +1168,11 @@ function write_F32(bytes as ByteArray, pos as Number, fval as Float) as Void {
 //     var high = Math.floor(fval / 4294967296.0).toNumber(); // 2^32
 //     var low = (fval - (high * 4294967296.0)).toNumber();
 
-//     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos, :endianness => Lang.ENDIAN_LITTLE });
-//     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4, :endianness => Lang.ENDIAN_LITTLE });
+//     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos });
+//     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4 });
 
 //     // Method 2: Direct encoding (if available)
-//     bytes.encodeNumber(fval, Lang.NUMBER_FORMAT_DOUBLE, { :offset => pos + 8, :endianness => Lang.ENDIAN_LITTLE });
+//     bytes.encodeNumber(fval, Lang.NUMBER_FORMAT_DOUBLE, { :offset => pos + 8 });
 
 //     // Log the bytes written
 //     System.println("Bytes written (Method 1):");
@@ -1194,8 +1204,8 @@ function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
     var low = (bits & 0xFFFFFFFF).toNumber();
     var high = ((bits >> 32) & 0xFFFFFFFF).toNumber();
 
-    bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos, :endianness => Lang.ENDIAN_LITTLE });
-    bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4, :endianness => Lang.ENDIAN_LITTLE });
+    bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos });
+    bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4 });
 
         // if (TRACE) {
         //     System.println("write_F64: Original value: " + fval + " isNaN:" + isNaN(fval) + " isInfinite:" + isInfinite(fval));
@@ -1217,10 +1227,10 @@ function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
 //     var low = (fval - (high * 4294967296.0)).toNumber();
 
 //     // Encode the low 32 bits
-//     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos, :endianness => Lang.ENDIAN_LITTLE });
+//     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos });
 
 //     // Encode the high 32 bits
-//     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4, :endianness => Lang.ENDIAN_LITTLE });
+//     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4 });
 // }
 
 
@@ -1230,7 +1240,16 @@ function value_repr(val as Array) as String {
     var fval = val[2];
     var vtn = VALUE_TYPE[vt];
     
-    if (vtn.equals("i32") || vtn.equals("i64")) {
+    if (vtn.equals("i32")) {
+        var unsignedVal;
+        if (ival instanceof Long) {
+            unsignedVal = ival & 0xFFFFFFFFL;
+            throw new WAException("unexpected long: " + ival);
+        } else {
+            unsignedVal = ival < 0 ? (ival.toLong() + 4294967296L) : ival.toLong();
+        }
+        return Lang.format("$1$:$2$", [unsignedVal.toString(), vtn]);
+    } else if (vtn.equals("i64")) {
         return Lang.format("$1$:$2$", [ival.toString(), vtn]);
     } else if (vtn.equals("f32") || vtn.equals("f64")) {
         return Lang.format("$1$:$2$", [fval.format("%.7f"), vtn]);
