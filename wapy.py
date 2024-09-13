@@ -954,7 +954,7 @@ def interpret_mvp(module,
 
         operation_count += 1
 
-        if operation_count > 320:
+        if operation_count > 1000:
             exit(0)
 
         if TRACE:

@@ -976,8 +976,12 @@ function bytes2int32(b) {
     return (val & 0x80000000) ? (val - 0x100000000l) : val;
 }
 
-function int2uint32(i) {
-    return i & 0xffffffff;
+function int2uint32(i as Number) as Long {
+    if (i < 0) {
+        return (i.toLong() + 0x100000000L) & 0xffffffffL;
+    } else {
+        return i.toLong() & 0xffffffffL;
+    }
 }
 
 function int2int32(i) {
@@ -1607,9 +1611,9 @@ function interpret_mvp(module_,
     var operation_count = 0;
 
     while (pc < code.size()) {
-        // if (operation_count > 100) {
-        //     break;
-        // }
+        if (operation_count > 1000) {
+            throw new WAException("max operation_count");
+        }
 
         if (module_.maxAsyncOperations != -1 && operation_count > module_.maxAsyncOperations) {
             return [pc, sp, fp, csp];
