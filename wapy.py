@@ -646,16 +646,21 @@ def write_F32(bytes, pos, fval):
 def write_F64(bytes, pos, fval):
     ival = intmask(pack_f64(fval))
     bytes[pos:pos+8] = uint642bytes(ival)
-
+    
 def value_repr(val):
     vt, ival, fval = val
     vtn = VALUE_TYPE[vt]
     if isinstance(val, tuple) and len(val) == 3 and isinstance(val[1], bool):
         return f"{1 if val[1] else 0}:{vtn}"
-    elif vtn in ('i32', 'i64'):
+    elif vtn == 'i32':
         if not isinstance(ival, int):
             raise TypeError(f"Expected int for {vtn}, got {type(ival).__name__}")
-        return f"{ival}:{vtn}"
+        return f"{int2int32(ival)}:{vtn}"
+    elif vtn == 'i64':
+        if not isinstance(ival, int):
+            raise TypeError(f"Expected int for {vtn}, got {type(ival).__name__}")
+        signed_val = int2int64(ival)
+        return f"{signed_val}:{vtn}"
     elif vtn in ('f32', 'f64'):
         if not isinstance(fval, float):
             raise TypeError(f"Expected float for {vtn}, got {type(fval).__name__}")
@@ -1233,9 +1238,15 @@ def interpret_mvp(module,
             sp -= 1
             if flags != 2:
                 if TRACE:
+                    if val[0] == I32:
+                        val_repr = "0x%08x" % (val[1] & 0xffffffff)
+                    elif val[0] == I64:
+                        val_repr = "0x%016x" % (val[1] & 0xffffffffffffffff)
+                    else:
+                        val_repr = str(val[2])  # For F32 and F64, use the float value
                     info("      - unaligned store - flags: 0x%x,"
-                         " offset: 0x%x, addr: 0x%x, val: 0x%x" % (
-                             flags, offset, addr_val[1], val[1]))
+                         " offset: 0x%x, addr: 0x%x, val: %s" % (
+                             flags, offset, addr_val[1], val_repr))
             addr = addr_val[1] + offset
             if bound_violation(opcode, addr, memory.pages):
                 raise WAException("out of bounds memory access")

@@ -1245,14 +1245,9 @@ function value_repr(val as Array) as String {
     var vtn = VALUE_TYPE[vt];
     
     if (vtn.equals("i32")) {
-        var unsignedVal;
-        if (ival instanceof Long) {
-            unsignedVal = ival & 0xFFFFFFFFL;
-            throw new WAException("unexpected long: " + ival);
-        } else {
-            unsignedVal = ival < 0 ? (ival.toLong() + 4294967296L) : ival.toLong();
-        }
-        return Lang.format("$1$:$2$", [unsignedVal.toString(), vtn]);
+        // Convert to signed 32-bit integer
+        var signedVal = (ival.toNumber() << 32) >> 32;
+        return Lang.format("$1$:$2$", [signedVal.toString(), vtn]);
     } else if (vtn.equals("i64")) {
         return Lang.format("$1$:$2$", [ival.toString(), vtn]);
     } else if (vtn.equals("f32") || vtn.equals("f64")) {
