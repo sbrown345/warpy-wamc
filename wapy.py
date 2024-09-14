@@ -1330,10 +1330,10 @@ def interpret_mvp(module,
             sp -= 1
             if   0x45 == opcode: # i32.eqz
                 if VALIDATE: assert a[0] == I32
-                res = (I32, a[1] == 0, 0.0)
+                res = (I32, 1 if a[1] == 0 else 0, 0.0)
             elif 0x50 == opcode: # i64.eqz
                 if VALIDATE: assert a[0] == I64
-                res = (I32, a[1] == 0, 0.0)
+                res = (I32, 1 if a[1] == 0 else 0, 0.0)
             else:
                 raise WAException("%s(0x%x) unimplemented" % (
                     OPERATOR_INFO[opcode][0], opcode))
@@ -1349,100 +1349,100 @@ def interpret_mvp(module,
             sp -= 2
             if   0x46 == opcode: # i32.eq
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, a[1] == b[1], 0.0)
+                res = (I32, 1 if a[1] == b[1] else 0, 0.0)
             elif 0x47 == opcode: # i32.ne
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, a[1] != b[1], 0.0)
+                res = (I32, 1 if a[1] != b[1] else 0, 0.0)
             elif 0x48 == opcode: # i32.lt_s
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, int2int32(a[1]) < int2int32(b[1]), 0.0)
+                res = (I32, 1 if int2int32(a[1]) < int2int32(b[1]) else 0, 0.0)
             elif 0x49 == opcode: # i32.lt_u
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, int2uint32(a[1]) < int2uint32(b[1]), 0.0)
+                res = (I32, 1 if int2uint32(a[1]) < int2uint32(b[1]) else 0, 0.0)
             elif 0x4a == opcode: # i32.gt_s
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, int2int32(a[1]) > int2int32(b[1]), 0.0)
+                res = (I32, 1 if int2int32(a[1]) > int2int32(b[1]) else 0, 0.0)
             elif 0x4b == opcode: # i32.gt_u
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, int2uint32(a[1]) > int2uint32(b[1]), 0.0)
+                res = (I32, 1 if int2uint32(a[1]) > int2uint32(b[1]) else 0, 0.0)
             elif 0x4c == opcode: # i32.le_s
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, int2int32(a[1]) <= int2int32(b[1]), 0.0)
+                res = (I32, 1 if int2int32(a[1]) <= int2int32(b[1]) else 0, 0.0)
             elif 0x4d == opcode: # i32.le_u
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, int2uint32(a[1]) <= int2uint32(b[1]), 0.0)
+                res = (I32, 1 if int2uint32(a[1]) <= int2uint32(b[1]) else 0, 0.0)
             elif 0x4e == opcode: # i32.ge_s
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, int2int32(a[1]) >= int2int32(b[1]), 0.0)
+                res = (I32, 1 if int2int32(a[1]) >= int2int32(b[1]) else 0, 0.0)
             elif 0x4f == opcode: # i32.ge_u
                 if VALIDATE: assert a[0] == I32 and b[0] == I32
-                res = (I32, int2uint32(a[1]) >= int2uint32(b[1]), 0.0)
+                res = (I32, 1 if int2uint32(a[1]) >= int2uint32(b[1]) else 0, 0.0)
             elif 0x51 == opcode: # i64.eq
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, a[1] == b[1], 0.0)
+                res = (I32, 1 if a[1] == b[1] else 0, 0.0)
             elif 0x52 == opcode: # i64.ne
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, a[1] != b[1], 0.0)
+                res = (I32, 1 if a[1] != b[1] else 0, 0.0)
             elif 0x53 == opcode: # i64.lt_s
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, int2int64(a[1]) < int2int64(b[1]), 0.0)
+                res = (I32, 1 if int2int64(a[1]) < int2int64(b[1]) else 0, 0.0)
             elif 0x54 == opcode: # i64.lt_u
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, int2uint64(a[1]) < int2uint64(b[1]), 0.0)
+                res = (I32, 1 if int2uint64(a[1]) < int2uint64(b[1]) else 0, 0.0)
             elif 0x55 == opcode: # i64.gt_s
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, int2int64(a[1]) > int2int64(b[1]), 0.0)
+                res = (I32, 1 if int2int64(a[1]) > int2int64(b[1]) else 0, 0.0)
             elif 0x56 == opcode: # i64.gt_u
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, int2uint64(a[1]) > int2uint64(b[1]), 0.0)
+                res = (I32, 1 if int2uint64(a[1]) > int2uint64(b[1]) else 0, 0.0)
             elif 0x57 == opcode: # i64.le_s
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, int2int64(a[1]) <= int2int64(b[1]), 0.0)
+                res = (I32, 1 if int2int64(a[1]) <= int2int64(b[1]) else 0, 0.0)
             elif 0x58 == opcode: # i64.le_u
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, int2uint64(a[1]) <= int2uint64(b[1]), 0.0)
+                res = (I32, 1 if int2uint64(a[1]) <= int2uint64(b[1]) else 0, 0.0)
             elif 0x59 == opcode: # i64.ge_s
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, int2int64(a[1]) >= int2int64(b[1]), 0.0)
+                res = (I32, 1 if int2int64(a[1]) >= int2int64(b[1]) else 0, 0.0)
             elif 0x5a == opcode: # i64.ge_u
                 if VALIDATE: assert a[0] == I64 and b[0] == I64
-                res = (I32, int2uint64(a[1]) >= int2uint64(b[1]), 0.0)
+                res = (I32, 1 if int2uint64(a[1]) >= int2uint64(b[1]) else 0, 0.0)
             elif 0x5b == opcode: # f32.eq
                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-                res = (I32, a[2] == b[2], 0.0)
+                res = (I32, 1 if a[2] == b[2] else 0, 0.0)
             elif 0x5c == opcode: # f32.ne
                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-                res = (I32, a[2] != b[2], 0.0)
+                res = (I32, 1 if a[2] != b[2] else 0, 0.0)
             elif 0x5d == opcode: # f32.lt
                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-                res = (I32, a[2] < b[2], 0.0)
+                res = (I32, 1 if a[2] < b[2] else 0, 0.0)
             elif 0x5e == opcode: # f32.gt
                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-                res = (I32, a[2] > b[2], 0.0)
+                res = (I32, 1 if a[2] > b[2] else 0, 0.0)
             elif 0x5f == opcode: # f32.le
                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-                res = (I32, a[2] <= b[2], 0.0)
+                res = (I32, 1 if a[2] <= b[2] else 0, 0.0)
             elif 0x60 == opcode: # f32.ge
                 if VALIDATE: assert a[0] == F32 and b[0] == F32
-                res = (I32, a[2] >= b[2], 0.0)
+                res = (I32, 1 if a[2] >= b[2] else 0, 0.0)
             elif 0x61 == opcode: # f64.eq
                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-                res = (I32, a[2] == b[2], 0.0)
+                res = (I32, 1 if a[2] == b[2] else 0, 0.0)
             elif 0x62 == opcode: # f64.ne
                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-                res = (I32, a[2] != b[2], 0.0)
+                res = (I32, 1 if a[2] != b[2] else 0, 0.0)
             elif 0x63 == opcode: # f64.lt
                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-                res = (I32, a[2] < b[2], 0.0)
+                res = (I32, 1 if a[2] < b[2] else 0, 0.0)
             elif 0x64 == opcode: # f64.gt
                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-                res = (I32, a[2] > b[2], 0.0)
+                res = (I32, 1 if a[2] > b[2] else 0, 0.0)
             elif 0x65 == opcode: # f64.le
                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-                res = (I32, a[2] <= b[2], 0.0)
+                res = (I32, 1 if a[2] <= b[2] else 0, 0.0)
             elif 0x66 == opcode: # f64.ge
                 if VALIDATE: assert a[0] == F64 and b[0] == F64
-                res = (I32, a[2] >= b[2], 0.0)
+                res = (I32, 1 if a[2] >= b[2] else 0, 0.0)
             else:
                 raise WAException("%s(0x%x) unimplemented" % (
                     OPERATOR_INFO[opcode][0], opcode))
