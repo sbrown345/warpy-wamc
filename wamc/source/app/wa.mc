@@ -2817,7 +2817,7 @@ class Module {
     var importFunction as ImportFunctionType;
 
     // Sections
-    private var type as Array<Type>;
+    var type as Array<Type>;
     private var import_list as Array<Import>;
     var function_ as Array<Function>;
     // private var fnImportCnt as Number;
