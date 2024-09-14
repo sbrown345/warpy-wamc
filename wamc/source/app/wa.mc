@@ -1953,9 +1953,17 @@ function interpret_mvp(module_,
             sp -= 1;
             if (flags[1] != 2) {
                 if (TRACE) {
+                    var val_repr;
+                    if (val[0] == I32) {
+                        val_repr = "0x" + (val[1] & 0xffffffff).format("%08x");
+                    } else if (val[0] == I64) {
+                        val_repr = "0x" + (val[1] & 0xffffffffffffffffL).format("%016x");
+                    } else {
+                        val_repr = val[2].toString();  // For F32 and F64, use the float value
+                    }
                     info("      - unaligned store - flags: 0x" + flags[1].format("%x") +
                          ", offset: 0x" + offset[1].format("%x") + ", addr: 0x" + addr_val[1].format("%x") +
-                         ", val: 0x" + val[1].format("%x"));
+                         ", val: " + val_repr);
                 }
             }
             var addr = addr_val[1] + offset[1];
