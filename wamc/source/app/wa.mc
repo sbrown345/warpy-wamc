@@ -19,29 +19,17 @@ var DEBUG = false; // verbose logging
 var VALIDATE = true;
 
 function createNaN() as Float {
-    var bytes = new [4]b;
-    bytes[0] = 0x00;
-    bytes[1] = 0x00;
-    bytes[2] = 0xC0;
-    bytes[3] = 0x7F;
+    var bytes = [0x00, 0x00, 0xC0, 0x7F]b;
     return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
 }
 
 function createPositiveInfinity() as Float {
-    var bytes = new [4]b;
-    bytes[0] = 0x00;
-    bytes[1] = 0x00;
-    bytes[2] = 0x80;
-    bytes[3] = 0x7F;
+    var bytes = [0x00, 0x00, 0x80, 0x7F]b;
     return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
 }
 
 function createNegativeInfinity() as Float {
-    var bytes = new [4]b;
-    bytes[0] = 0x00;
-    bytes[1] = 0x00;
-    bytes[2] = 0x80;
-    bytes[3] = 0xFF;
+    var bytes = [0x00, 0x00, 0x80, 0xFF]b;
     return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
 }
 
@@ -1044,6 +1032,15 @@ function int2uint64(i) {
 
 function int2int64(i) {
     return i.toLong();
+}
+
+function i64_shr_u(value as Long, shift as Number) as Long {
+    if (shift == 0) {
+        return value;
+    }
+    
+    var result = (value >> shift) & (~((-1L) << (64 - shift)));
+    return result;
 }
 
 // https://en.wikipedia.org/wiki/LEB128

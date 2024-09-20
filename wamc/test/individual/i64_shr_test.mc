@@ -2,14 +2,7 @@ import Toybox.System;
 import Toybox.Lang;
 import Toybox.Test;
 
-function i64_shr_u(value as Long, shift as Number) as Long {
-    if (shift == 0) {
-        return value;
-    }
-    
-    var result = (value >> shift) & (~((-1L) << (64 - shift)));
-    return result;
-}
+
 // function i64_shr_u(value as Long, shift as Number) as Long {
 //     if (shift == 0) {
 //         return value;
