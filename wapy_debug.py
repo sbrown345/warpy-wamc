@@ -2101,7 +2101,7 @@ class Module():
 
     def dump(self):
         #debug("raw module data: %s" % self.data)
-        debug("module bytes: %s" % byte_code_repr(self.rdr.bytes))
+        # debug("module bytes: %s" % byte_code_repr(self.rdr.bytes))
         info("")
 
         info("Types:")

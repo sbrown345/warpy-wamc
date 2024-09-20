@@ -18,19 +18,206 @@ var DEBUG = false; // verbose logging
 // var DEBUG = true;
 var VALIDATE = true;
 
+function createNaN() as Float {
+    var bytes = [0x00, 0x00, 0xC0, 0x7F]b;
+    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
+}
+
+function createPositiveInfinity() as Float {
+    var bytes = [0x00, 0x00, 0x80, 0x7F]b;
+    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
+}
+
+function createNegativeInfinity() as Float {
+    var bytes = [0x00, 0x00, 0x80, 0xFF]b;
+    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
+}
 
 function do_sort(a as Array) as Array {
     return a.sort(null);
 }
 
-// def unpack_f32(i32):
-//     return struct.unpack('f', struct.pack('i', i32))[0]
-// def unpack_f64(i64):
-//     return struct.unpack('d', struct.pack('q', i64))[0]
-// def pack_f32(f32):
-//     return struct.unpack('i', struct.pack('f', f32))[0]
-// def pack_f64(f64):
-//     return struct.unpack('q', struct.pack('d', f64))[0]
+var packing_temp = new [8]b;
+
+function unpack_f32(i32 as Number) as Float {
+    packing_temp.encodeNumber(i32, Lang.NUMBER_FORMAT_SINT32, { :offset => 0 });
+    return packing_temp.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
+}
+
+function unpack_f64(i64 as Long) as Double {
+    return bitsToDouble(i64);
+    // var low = (i64 & 0xFFFFFFFF).toNumber();
+    // var high = ((i64 >> 32) & 0xFFFFFFFF).toNumber();
+    
+    // // Combine low and high into a single float
+    // // This will lose precision but is much simpler
+    // return low.toFloat() + high.toFloat() * 4294967296.0; // 2^32
+}
+
+function pack_f32(f32 as Float) as Number {
+    packing_temp.encodeNumber(f32, Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
+    return packing_temp.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => 0 });
+}
+
+function pack_f64(f64 as Double) as Long {
+    return doubleToBits(f64);
+    // var high = Math.floor(f64 / 4294967296.0); // 2^32
+    // var low = f64 - (high * 4294967296.0);
+    // return (high.toLong() << 32) | (low.toLong() & 0xFFFFFFFF);
+}
+
+function bitsToDouble(bits as Long) as Double {
+    if (bits == 0 || bits == 0x8000000000000000L) {
+        return bits == 0 ? 0.0d : -0.0d;
+    }
+
+    var sign = ((bits >> 63) & 1) == 0 ? 1 : -1;
+    var exponent = ((bits >> 52) & 0x7FF).toNumber() - 1023;
+    var fraction = bits & 0xFFFFFFFFFFFFFL;
+
+    if (exponent == 1024) {
+        if (fraction == 0) {
+            return sign < 0 ? createNegativeInfinity() : createPositiveInfinity();
+        } else {
+            return createNaN();
+        }
+    }
+
+    var result;
+    if (exponent == -1023) {
+        // Subnormal number
+        result = fraction.toDouble() / 4503599627370496.0d * Math.pow(2, -1022);
+    } else {
+        result = (1.0d + fraction.toDouble() / 4503599627370496.0d) * Math.pow(2, exponent);
+    }
+
+    return sign * result;
+}
+
+function doubleToBits(d as Double) as Long {
+    if (d == 0) {
+        return d < 0 ? 0x8000000000000000L : 0;
+    } else if (isNaN(d)) {
+        return 0x7FF8000000000000L;
+    } else if (isInfinite(d)) {
+        return d < 0 ? 0xFFF0000000000000L : 0x7FF0000000000000L;
+    }
+
+    var sign = d < 0 ? 1L : 0L;
+    d = d.abs();
+    var exponent = Math.floor(Math.log(d, 2)).toNumber();
+    var fraction = d / Math.pow(2, exponent) - 1;
+
+    exponent += 1023; // Bias
+
+    if (exponent <= 0) {
+        // Subnormal number
+        fraction = d / Math.pow(2, -1022);
+        exponent = 0;
+    } else if (exponent >= 0x7FF) {
+        // Overflow to infinity
+        return sign == 1 ? 0xFFF0000000000000L : 0x7FF0000000000000L;
+    }
+
+    var bits = (sign << 63) | ((exponent.toLong() & 0x7FF) << 52) | ((fraction * (1L << 52)).toLong() & 0xFFFFFFFFFFFFFL);
+    return bits;
+}
+
+// function pack_f64(f64 as Double) as Long {
+//     packing_temp.encodeNumber(f64, Lang.NUMBER_FORMAT_DOUBLE, { :offset => 0 });
+//     var low = packing_temp.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => 0 });
+//     var high = packing_temp.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => 4 });
+//     return (high.toLong() << 32) | low.toLong();
+// }
+
+// function pack_f64(f64 as Float) as Long {
+//     packing_temp.encodeNumber(f64.toFloat(), Lang.NUMBER_FORMAT_FLOAT, { :offset => 0 });
+//     var low = packing_temp.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => 0 });
+//     var high = packing_temp.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => 4 });
+//     return (high.toLong() << 32) | low.toLong();
+// }
+
+
+// function unpack_f64(i64 as Long) as Float {
+//     var bytes = new [8]b;
+//     for (var i = 0; i < 8; i++) {
+//         bytes[i] = ((i64 >> (i * 8)) & 0xFF).toNumber();
+//     }
+    
+//     // Extract sign, exponent, and fraction
+//     var sign = (bytes[7] & 0x80) != 0 ? -1 : 1;
+//     var exponent = ((bytes[7] & 0x7F) << 4) | ((bytes[6] & 0xF0) >> 4);
+//     var fraction = 0.0;
+    
+//     // Calculate fraction
+//     for (var i = 0; i < 6; i++) {
+//         fraction += bytes[i] * Math.pow(2, -48 + (i * 8));
+//     }
+//     fraction += (bytes[6] & 0x0F) * Math.pow(2, -4);
+    
+//     // Handle special cases
+//     if (exponent == 0) {
+//         if (fraction == 0.0) {
+//             return sign * 0.0; // Zero
+//         } else {
+//             return sign * fraction * Math.pow(2, -1022); // Subnormal
+//         }
+//     } else if (exponent == 0x7FF) {
+//         if (fraction == 0.0) {
+//             return sign * Float.INFINITY; // Infinity
+//         } else {
+//             return Float.NaN; // NaN
+//         }
+//     }
+    
+//     // Normal number
+//     return sign * (1.0 + fraction) * Math.pow(2, exponent - 1023);
+// }
+
+// function pack_f64(f64 as Float) as Long {
+//     var bytes = new [8]b;
+    
+//     if (f64 == 0.0) {
+//         return 0; // Positive or negative zero
+//     } else if (f64.isNaN()) {
+//         return 0x7FF8000000000000; // NaN
+//     } else if (!f64.isFinite()) {
+//         return f64 < 0 ? 0xFFF0000000000000 : 0x7FF0000000000000; // Infinity
+//     }
+    
+//     var sign = f64 < 0 ? 1 : 0;
+//     f64 = f64.abs();
+//     var exponent = Math.floor(Math.log(f64, 2));
+//     var fraction = f64 / Math.pow(2, exponent) - 1;
+    
+//     exponent += 1023; // Bias
+    
+//     if (exponent <= 0) {
+//         // Subnormal number
+//         fraction = fraction * Math.pow(2, exponent);
+//         exponent = 0;
+//     } else if (exponent >= 0x7FF) {
+//         // Overflow to infinity
+//         return sign == 1 ? 0xFFF0000000000000 : 0x7FF0000000000000;
+//     }
+    
+//     // Pack the bytes
+//     bytes[7] = (sign << 7) | ((exponent >> 4) & 0x7F);
+//     bytes[6] = ((exponent & 0x0F) << 4) | ((fraction * 16) & 0x0F);
+//     for (var i = 5; i >= 0; i--) {
+//         fraction *= 256;
+//         bytes[i] = fraction & 0xFF;
+//         fraction -= bytes[i];
+//     }
+    
+//     // Convert bytes to Long
+//     var result = 0L;
+//     for (var i = 0; i < 8; i++) {
+//         result |= (bytes[i].toLong() << (i * 8));
+//     }
+//     return result;
+// }
+
 
 function intmask(i) {return i;}
 
@@ -98,7 +285,7 @@ function assertTrap(expectedAssertMessage as String, actual as Exception) as Boo
     return true;
 }
 function i32(x) { return [I32, x.toNumber(), 0.0]; }
-function i64(x) { return [I64, x.toLong, 0.0]; }
+function i64(x) { return [I64, x.toLong(), 0.0]; }
 function f32(x) { return [F32, 0, x.toFloat()]; }
 function f64(x) { return [F64, 0, x.toDouble()]; }
 
@@ -234,8 +421,8 @@ class FunctionImport extends Code {
 const MAGIC as Number = 0x6d736100;
 const VERSION as Number = 0x01;  // MVP
 
-const STACK_SIZE as Number = 32; //65536;
-const CALLSTACK_SIZE as Number = 32; //8192;
+const STACK_SIZE as Number = 512; //65536;
+const CALLSTACK_SIZE as Number = 512; //8192;
 
 enum Types {
     I32     = 0x7f,  // -0x01
@@ -717,9 +904,19 @@ function rotl32(a, cnt) {
     return ((a << (cnt % 0x20)) & 0xffffffff) | (a >> (0x20 - (cnt % 0x20)));
 }
 
-function rotr32(a, cnt) {
-    return (a >> (cnt % 0x20)) | ((a << (0x20 - (cnt % 0x20))) & 0xffffffff);
+function rotr32(a as Number, cnt as Number) as Number {
+    var n = a;
+    var c = cnt % 32;
+    for (var i = 0; i < c; i++) {
+        var lowBit = n & 0x1;
+        n = (n >> 1) & 0x7FFFFFFF;  // Shift right and clear the sign bit
+        if (lowBit) {
+            n |= 0x80000000;  // Set the highest bit if the lowest bit was 1
+        }
+    }
+    return n;
 }
+
 
 function rotl64(a, cnt) {
     return ((a << (cnt % 0x40)) & 0xffffffffffffffffl) | (a >> (0x40 - (cnt % 0x40)));
@@ -767,8 +964,12 @@ function bytes2int32(b) {
     return (val & 0x80000000) ? (val - 0x100000000l) : val;
 }
 
-function int2uint32(i) {
-    return i & 0xffffffff;
+function int2uint32(i as Number) as Long {
+    if (i < 0) {
+        return (i.toLong() + 0x100000000L) & 0xffffffffL;
+    } else {
+        return i.toLong() & 0xffffffffL;
+    }
 }
 
 function int2int32(i) {
@@ -780,22 +981,40 @@ function int2int32(i) {
 
 //
 
-function bytes2uint64(b) {
-    return ((b[7] << 56) + (b[6] << 48) + (b[5] << 40) + (b[4] << 32) +
-            (b[3] << 24) + (b[2] << 16) + (b[1] << 8) + b[0]);
+function uint642bytes(v as Long) as Array<Number> {
+    if(!(v instanceof Long)) {
+        System.println("uint642bytes: input is not a Long");
+        v = v.toLong();
+    }
+    var result = [
+        (v & 0xff).toNumber(),
+        ((v >> 8) & 0xff).toNumber(),
+        ((v >> 16) & 0xff).toNumber(),
+        ((v >> 24) & 0xff).toNumber(),
+        ((v >> 32) & 0xff).toNumber(),
+        ((v >> 40) & 0xff).toNumber(),
+        ((v >> 48) & 0xff).toNumber(),
+        ((v >> 56) & 0xff).toNumber()
+    ];
+    // System.println("uint642bytes: input=" + v + ", output=" + result);
+    return result;
 }
 
-function uint642bytes(v) {
-    return [
-        0xff & v,
-        0xff & (v >> 8),
-        0xff & (v >> 16),
-        0xff & (v >> 24),
-        0xff & (v >> 32),
-        0xff & (v >> 40),
-        0xff & (v >> 48),
-        0xff & (v >> 56)
-    ];
+function bytes2uint64(b as ByteArray) as Long {
+    var result = (b[7].toLong() << 56) |
+           (b[6].toLong() << 48) |
+           (b[5].toLong() << 40) |
+           (b[4].toLong() << 32) |
+           (b[3].toLong() << 24) |
+           (b[2].toLong() << 16) |
+           (b[1].toLong() << 8) |
+           b[0].toLong();
+    // System.println("bytes2uint64: input=" + b + ", output=" + result);
+    if(!(result instanceof Long)) {
+        System.println("bytes2uint64: result is not a Long");
+        result = result.toLong();
+    }
+    return result;
 }
 
 function bytes2int64(b) {
@@ -812,23 +1031,30 @@ function int2uint64(i) {
 }
 
 function int2int64(i) {
-    throw new NotImplementedException();
-    // var val = i & 0xffffffffffffffffl;
-    // return (val & 0x8000000000000000l) ? (val - 0x10000000000000000l) : val;
+    return i.toLong();
+}
+
+function i64_shr_u(value as Long, shift as Number) as Long {
+    if (shift == 0) {
+        return value;
+    }
+    
+    var result = (value >> shift) & (~((-1L) << (64 - shift)));
+    return result;
 }
 
 // https://en.wikipedia.org/wiki/LEB128
-function read_LEB(bytes, pos, maxbits/*=32*/, signed/*=false*/) as [Number, Number] {
-    var result = 0;
+function read_LEB(bytes, pos, maxbits/*=32*/, signed/*=false*/) as [Number, Number or Long] {
+    var result = 0L;
     var shift = 0;
     var bcnt = 0;
     var startpos = pos;
 
-    if(maxbits == null) {
+    if (maxbits == null) {
         maxbits = 32;
     }
 
-    if(signed == null) {
+    if (signed == null) {
         signed = false; 
     }
 
@@ -836,7 +1062,7 @@ function read_LEB(bytes, pos, maxbits/*=32*/, signed/*=false*/) as [Number, Numb
     while (true) {
         byte = bytes[pos];
         pos += 1;
-        result |= ((byte & 0x7f) << shift);
+        result |= ((byte & 0x7f).toLong() << shift);
         shift += 7;
         if ((byte & 0x80) == 0) {
             break;
@@ -847,9 +1073,13 @@ function read_LEB(bytes, pos, maxbits/*=32*/, signed/*=false*/) as [Number, Numb
         }
     }
     if (signed && (shift < maxbits) && (byte & 0x40)) {
-        result |= - (1 << shift);
+        result |= ((-1L) << shift);
     }
-    return [pos, result];
+
+    // Convert result to Number if maxbits <= 32, otherwise keep it as Long
+    var finalResult = (maxbits <= 32) ? result.toNumber() : result;
+
+    return [pos, finalResult];
 }
 
 function read_I32(bytes, pos) {
@@ -857,9 +1087,22 @@ function read_I32(bytes, pos) {
     return bytes.decodeNumber(Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
 }
 
-function read_I64(bytes, pos) {
+// function read_I64(bytes as ByteArray, pos as Number) as Long {
+//     assert(pos >= 0, null);
+//     var slice = bytes.slice(pos, pos + 8);
+//     System.println("read_I64: pos=" + pos + ", slice=" + slice);
+//     return bytes2uint64(slice);
+// }
+
+function read_I64(bytes as ByteArray, pos as Number) as Long {
     assert(pos >= 0, null);
-    return bytes2uint64(bytes.slice(pos, pos + 8));
+    var low = bytes.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => pos });
+    var high = bytes.decodeNumber(Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4 });
+    
+    var result = (high.toLong() << 32) | (low.toLong() & 0xFFFFFFFF);
+    
+    // System.println("read_I64: pos=" + pos + ", low=" + low + ", high=" + high + ", result=" + result);
+    return result;
 }
 
 function read_F32(bytes, pos) {
@@ -869,29 +1112,127 @@ function read_F32(bytes, pos) {
     return fround(num, 5);
 }
 
-function read_F64(bytes, pos) {
+function read_F64(bytes as ByteArray, pos as Number) as Float {
     assert(pos >= 0, null);
-    return bytes.decodeNumber(Lang.NUMBER_FORMAT_FLOAT, { :offset => pos });
+    var long_value = read_I64(bytes, pos);
+    return bitsToDouble(long_value);
 }
 
 function write_I32(bytes as ByteArray, pos as Number, ival as Number) as Void {
     bytes.encodeNumber(ival, Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
 }
 
-function write_I64(bytes as ByteArray, pos as Number, ival as Number) as Void {
-    throw new NotImplementedException();
-    // bytes[pos:pos + 8] = uint642bytes(ival);
+
+// function write_I64(bytes as ByteArray, pos as Number, ival as Long) as Void {
+//     System.println("write_I64: pos=" + pos + ", ival=" + ival);
+    
+//     var byteArray = uint642bytes(ival);
+    
+//     for (var i = 0; i < 8; i++) {
+//         bytes[pos + i] = byteArray[i];
+//     }
+
+//     System.println("write_I64: Bytes written: " + bytes.slice(pos, pos + 8));
+
+//     var num = read_I64(bytes, pos);
+//     System.println("write_I64: Wrote " + ival + ", read back " + num);
+// }
+
+function write_I64(bytes as ByteArray, pos as Number, ival as Long) as Void {
+    ival = ival.toLong();
+
+    if (TRACE) {
+        System.println("write_I64: pos=" + pos + ", ival=" + ival);
+    }
+    
+    var low = ival.toNumber() & 0xFFFFFFFF;
+    var high = (ival >> 32).toNumber() & 0xFFFFFFFF;
+    
+    bytes.encodeNumber(low, Lang.NUMBER_FORMAT_SINT32, { :offset => pos });
+    bytes.encodeNumber(high, Lang.NUMBER_FORMAT_SINT32, { :offset => pos + 4 });
+
+
+    var readBack = read_I64(bytes, pos);
+    if (readBack != ival) {
+        System.println("write_I64: Bytes written: " + bytes.slice(pos, pos + 8));
+        System.println("write_I64: Wrote " + ival + ", read back " + readBack);
+        throw new WAException("write_I64: Wrote " + ival + ", read back " + readBack);
+    }
 }
 
 function write_F32(bytes as ByteArray, pos as Number, fval as Float) as Void {
     bytes.encodeNumber(fval, Lang.NUMBER_FORMAT_FLOAT, { :offset => pos });
 }
 
+// function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
+//     // Method 1: Split and encode
+//     var high = Math.floor(fval / 4294967296.0).toNumber(); // 2^32
+//     var low = (fval - (high * 4294967296.0)).toNumber();
+
+//     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos });
+//     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4 });
+
+//     // Method 2: Direct encoding (if available)
+//     bytes.encodeNumber(fval, Lang.NUMBER_FORMAT_DOUBLE, { :offset => pos + 8 });
+
+//     // Log the bytes written
+//     System.println("Bytes written (Method 1):");
+//     for (var i = 0; i < 8; i++) {
+//         System.print(bytes[pos + i].format("%02X") + " ");
+//     }
+//     System.println("");
+
+//     System.println("Bytes written (Method 2):");
+//     for (var i = 0; i < 8; i++) {
+//         System.print(bytes[pos + 8 + i].format("%02X") + " ");
+//     }
+//     System.println("");
+
+//     // Read and log results
+//     var i64_result1 = read_I64(bytes, pos);
+//     var f64_result1 = read_F64(bytes, pos);
+//     var i64_result2 = read_I64(bytes, pos + 8);
+//     var f64_result2 = read_F64(bytes, pos + 8);
+
+//     System.println("Method 1 - read_I64: " + i64_result1);
+//     System.println("Method 1 - read_F64: " + f64_result1);
+//     System.println("Method 2 - read_I64: " + i64_result2);
+//     System.println("Method 2 - read_F64: " + f64_result2);
+// }
+
 function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
-    throw new NotImplementedException();
-    // var ival = intmask(pack_f64(fval));
-    // bytes[pos:pos + 8] = uint642bytes(ival);
+    var bits = doubleToBits(fval);
+    var low = (bits & 0xFFFFFFFF).toNumber();
+    var high = ((bits >> 32) & 0xFFFFFFFF).toNumber();
+
+    bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos });
+    bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4 });
+
+        // if (TRACE) {
+        //     System.println("write_F64: Original value: " + fval + " isNaN:" + isNaN(fval) + " isInfinite:" + isInfinite(fval));
+        //     System.println("Bytes written:");
+        //     for (var i = 0; i < 8; i++) {
+        //         System.print(bytes[pos + i].format("%02X") + " ");
+        //     }
+        //     System.println("");
+
+        //     var long_value = read_I64(bytes, pos);
+        //     var result = bitsToDouble(long_value);
+        //     System.println("Read back value: " + result + " isNaN:" + isNaN(result) + " isInfinite:" + isInfinite(result));
+        // }
 }
+
+// function write_F64(bytes as ByteArray, pos as Number, fval as Float) as Void {
+//     // Split the float into two 32-bit parts
+//     var high = Math.floor(fval / 4294967296.0).toNumber(); // 2^32
+//     var low = (fval - (high * 4294967296.0)).toNumber();
+
+//     // Encode the low 32 bits
+//     bytes.encodeNumber(low, Lang.NUMBER_FORMAT_UINT32, { :offset => pos });
+
+//     // Encode the high 32 bits
+//     bytes.encodeNumber(high, Lang.NUMBER_FORMAT_UINT32, { :offset => pos + 4 });
+// }
 
 
 function value_repr(val as Array) as String {
@@ -900,15 +1241,14 @@ function value_repr(val as Array) as String {
     var fval = val[2];
     var vtn = VALUE_TYPE[vt];
     
-    if (vtn.equals("i32") || vtn.equals("i64")) {
-        return Lang.format("0x$1$:$2$", [ival.format("%x"), vtn]);
+    if (vtn.equals("i32")) {
+        // Convert to signed 32-bit integer
+        var signedVal = (ival.toNumber() << 32) >> 32;
+        return Lang.format("$1$:$2$", [signedVal.toString(), vtn]);
+    } else if (vtn.equals("i64")) {
+        return Lang.format("$1$:$2$", [ival.toString(), vtn]);
     } else if (vtn.equals("f32") || vtn.equals("f64")) {
-        var str = fval.format("%.7f");
-        if (str.find(".") == -1) {
-            return Lang.format("$1$:$2$", [fval.format("%f"), vtn]);
-        } else {
-            return Lang.format("$1$:$2$", [str, vtn]);
-        }
+        return Lang.format("$1$:$2$", [fval.format("%.7f"), vtn]);
     } else {
         throw new WAException("unknown value type " + vtn);
     }
@@ -1154,14 +1494,15 @@ function popBlock(stack as StackType, callstack as CallStackType, sp as Number, 
 function do_call(stack as StackType, callstack as CallStackType, sp as Number, fp as Number, csp as Number, func as Function, pc as Number, indirect as Boolean) as Array<Number> {
     // Push block, stack size and return address onto callstack
     var t = func.type;
-    // System.println("do_call: Setting return address to 0x" + pc.format("%x"));
+    if (TRACE) {
+        System.println("do_call: Setting return address to 0x" + pc.format("%x"));
+    }
     csp += 1;
     callstack[csp] = [func, sp - t.params.size(), fp, pc];
-    // System.println("do_call: pc:" + pc + ", " + callstackRepr(csp, callstack));
 
     // Update the pos/instruction counter to the function
     pc = func.start;
-    // System.println("do_call: pc: 0x" + pc.format("%x"));
+    System.println("do_call: pc: 0x" + pc.format("%x"));
 
     if (TRACE) {
         info(Lang.format("  Calling function 0x$1$, start: 0x$2$, end: 0x$3$, $4$ locals, $5$ params, $6$ results",
@@ -1262,8 +1603,8 @@ function interpret_mvp(module_,
     var operation_count = 0;
 
     while (pc < code.size()) {
-        // if (operation_count > 100) {
-        //     break;
+        // if (operation_count > 10000) {
+        //     throw new WAException("max operation_count");
         // }
 
         if (module_.maxAsyncOperations != -1 && operation_count > module_.maxAsyncOperations) {
@@ -1282,7 +1623,15 @@ function interpret_mvp(module_,
             var immediates = skipImmediates(code, curPc)[1];
             var immediateParts = [];
             for (var i = 0; i < immediates.size(); i++) {
-                immediateParts.add("0x" + immediates[i].format("%x"));
+                if (immediates[i] instanceof Float or immediates[i] instanceof Double) {
+                    if (immediates[i].toNumber() == immediates[i]) {
+                        immediateParts.add(immediates[i].format("%d"));
+                    } else {
+                        immediateParts.add(immediates[i].format("%.7f"));
+                    }
+                } else {
+                    immediateParts.add("0x" + immediates[i].format("%x"));
+                }
             }
             info("    0x" + curPc.format("%x") + " <0x" + opcode.format("%x") + "/" + OPERATOR_INFO[opcode][0] +
                  (immediates.size() > 0 ? " " : "") +
@@ -1546,10 +1895,11 @@ function interpret_mvp(module_,
             }
             var addr = addr_val[1] + offset[1];
             if (bound_violation(opcode, addr, memory.pages)) {
-                throw new WAException("out of bounds memory access");
+                throw new WAException("out of bounds memory access: address " + addr + " exceeds memory size " + (memory.pages * (1 << 16)) + " bytes (pages: " + memory.pages + ")");
             }
             assert(addr >= 0, null);
             var res;
+            // TODO: USE byteArray.decodeNumber(format, options)
             if (opcode == 0x28) {  // i32.load
                 res = [I32, bytes2uint32(memory.bytes.slice(addr, addr+4)), 0.0];
             } else if (opcode == 0x29) {  // i64.load
@@ -1583,6 +1933,9 @@ function interpret_mvp(module_,
             }
             sp += 1;
             stack[sp] = res;
+            if (TRACE) {
+                debug("Memory load: addr=" + addr + ", value=" + value_repr(res));
+            }
         }
 
         // Memory store operators
@@ -1597,9 +1950,17 @@ function interpret_mvp(module_,
             sp -= 1;
             if (flags[1] != 2) {
                 if (TRACE) {
+                    var val_repr;
+                    if (val[0] == I32) {
+                        val_repr = "0x" + (val[1] & 0xffffffff).format("%08x");
+                    } else if (val[0] == I64) {
+                        val_repr = "0x" + (val[1] & 0xffffffffffffffffL).format("%016x");
+                    } else {
+                        val_repr = val[2].toString();  // For F32 and F64, use the float value
+                    }
                     info("      - unaligned store - flags: 0x" + flags[1].format("%x") +
                          ", offset: 0x" + offset[1].format("%x") + ", addr: 0x" + addr_val[1].format("%x") +
-                         ", val: 0x" + val[1].format("%x"));
+                         ", val: " + val_repr);
                 }
             }
             var addr = addr_val[1] + offset[1];
@@ -1632,6 +1993,10 @@ function interpret_mvp(module_,
                 memory.bytes[addr+3] = (val[1] & 0xff000000) >> 24;
             } else {
                 throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+
+            if (TRACE) {
+                debug("Memory store: addr=" + addr.toString() + ", value=" + value_repr(val));
             }
         }
 
@@ -1672,6 +2037,10 @@ function interpret_mvp(module_,
             pc = result[0];
             var val = result[1];
             sp += 1;
+            if(!(val instanceof Long)) {
+                System.println("i64.const: val is not a Long");
+                val = val.toLong();
+            }
             stack[sp] = [I64, val, 0.0];
             if (TRACE) {
                 debug("      - " + value_repr(stack[sp]));
@@ -2021,324 +2390,258 @@ function interpret_mvp(module_,
             if (TRACE) {
                 debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
             }
+
             sp += 1;
             stack[sp] = res;
         }
 
-//         # i64 binary
-//         elif 0x7c <= opcode <= 0x8a:
-//             a, b = stack[sp-1], stack[sp]
-//             sp -= 2
-//             if VALIDATE: assert a[0] == I64 and b[0] == I64
-//             if   0x7c == opcode: # i64.add
-//                 res = (I64, int2int64(a[1] + b[1]), 0.0)
-//             elif 0x7d == opcode: # i64.sub
-//                 res = (I64, a[1] - b[1], 0.0)
-//             elif 0x7e == opcode: # i64.mul
-//                 res = (I64, int2int64(a[1] * b[1]), 0.0)
-//             elif 0x7f == opcode: # i64.div_s
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-// #                elif a[1] == 0x8000000000000000 and b[1] == -1:
-// #                    raise WAException("integer overflow")
-//                 else:
-//                     res = (I64, idiv_s(int2int64(a[1]), int2int64(b[1])), 0.0)
-//             elif 0x80 == opcode: # i64.div_u
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 else:
-//                     if a[1] < 0 and b[1] > 0:
-//                         res = (I64, int2uint64(-a[1]) / int2uint64(b[1]), 0.0)
-//                     elif a[1] > 0 and b[1] < 0:
-//                         res = (I64, int2uint64(a[1]) / int2uint64(-b[1]), 0.0)
-//                     else:
-//                         res = (I64, int2uint64(a[1]) / int2uint64(b[1]), 0.0)
-//             elif 0x81 == opcode: # i64.rem_s
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 else:
-//                     res = (I64, irem_s(int2int64(a[1]), int2int64(b[1])), 0.0)
-//             elif 0x82 == opcode: # i64.rem_u
-//                 if b[1] == 0:
-//                     raise WAException("integer divide by zero")
-//                 else:
-//                     res = (I64, int2uint64(a[1]) % int2uint64(b[1]), 0.0)
-//             elif 0x83 == opcode: # i64.and
-//                 res = (I64, a[1] & b[1], 0.0)
-//             elif 0x84 == opcode: # i64.or
-//                 res = (I64, a[1] | b[1], 0.0)
-//             elif 0x85 == opcode: # i64.xor
-//                 res = (I64, a[1] ^ b[1], 0.0)
-//             elif 0x86 == opcode: # i64.shl
-//                 res = (I64, a[1] << (b[1] % 0x40), 0.0)
-//             elif 0x87 == opcode: # i64.shr_s
-//                 res = (I64, int2int64(a[1]) >> (b[1] % 0x40), 0.0)
-//             elif 0x88 == opcode: # i64.shr_u
-//                 res = (I64, int2uint64(a[1]) >> (b[1] % 0x40), 0.0)
-// #            elif 0x89 == opcode: # i64.rotl
-// #                res = (I64, rotl64(a[1], b[1]), 0.0)
-// #            elif 0x8a == opcode: # i64.rotr
-// #                res = (I64, rotr64(a[1], b[1]), 0.0)
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s, %s) = %s" % (
-//                     value_repr(a), value_repr(b), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
+        // i64 binary
+        else if (0x7c <= opcode && opcode <= 0x8a) {
+            var a = stack[sp-1];
+            var b = stack[sp];
+            sp -= 2;
+            if (VALIDATE) {
+                if (a[0] != I64 || b[0] != I64) {
+                    throw new WAException("Type mismatch: expected I64");
+                }
+            }
+            var res;
+            if (opcode == 0x7c) { // i64.add
+                res = [I64, int2int64(a[1] + b[1]), 0.0];
+            } else if (opcode == 0x7d) { // i64.sub
+                res = [I64, a[1] - b[1], 0.0];
+            } else if (opcode == 0x7e) { // i64.mul
+                res = [I64, int2int64(a[1] * b[1]), 0.0];
+            } else if (opcode == 0x7f) { // i64.div_s
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    res = [I64, idiv_s(int2int64(a[1]), int2int64(b[1])), 0.0];
+                }
+            } else if (opcode == 0x80) { // i64.div_u
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    if (a[1] < 0 && b[1] > 0) {
+                        res = [I64, int2uint64(-a[1]) / int2uint64(b[1]), 0.0];
+                    } else if (a[1] > 0 && b[1] < 0) {
+                        res = [I64, int2uint64(a[1]) / int2uint64(-b[1]), 0.0];
+                    } else {
+                        res = [I64, int2uint64(a[1]) / int2uint64(b[1]), 0.0];
+                    }
+                }
+            } else if (opcode == 0x81) { // i64.rem_s
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    res = [I64, irem_s(int2int64(a[1]), int2int64(b[1])), 0.0];
+                }
+            } else if (opcode == 0x82) { // i64.rem_u
+                if (b[1] == 0) {
+                    throw new WAException("integer divide by zero");
+                } else {
+                    res = [I64, int2uint64(a[1]) % int2uint64(b[1]), 0.0];
+                }
+            } else if (opcode == 0x83) { // i64.and
+                res = [I64, a[1] & b[1], 0.0];
+            } else if (opcode == 0x84) { // i64.or
+                res = [I64, a[1] | b[1], 0.0];
+            } else if (opcode == 0x85) { // i64.xor
+                res = [I64, a[1] ^ b[1], 0.0];
+            } else if (opcode == 0x86) { // i64.shl
+                res = [I64, a[1] << (b[1] % 0x40), 0.0];
+            } else if (opcode == 0x87) { // i64.shr_s
+                res = [I64, int2int64(a[1]) >> (b[1] % 0x40), 0.0];
+            } else if (opcode == 0x88) { // i64.shr_u
+                res = [I64, i64_shr_u(a[1], b[1] % 0x40), 0.0];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
+        // f32 binary operations
+        else if (0x92 <= opcode && opcode <= 0x98) {
+            var a = stack[sp-1];
+            var b = stack[sp];
+            sp -= 2;
+            if (VALIDATE) { assert(a[0] == F32 && b[0] == F32, null); }
+            var res;
+            if (opcode == 0x92) { // f32.add
+                res = [F32, 0, a[2] + b[2]];
+            } else if (opcode == 0x93) { // f32.sub
+                res = [F32, 0, a[2] - b[2]];
+            } else if (opcode == 0x94) { // f32.mul
+                res = [F32, 0, a[2] * b[2]];
+            } else if (opcode == 0x95) { // f32.div
+                res = [F32, 0, a[2] / b[2]];
+            } else if (opcode == 0x96) { // f32.min
+                res = [F32, 0, (a[2] < b[2]) ? a[2] : b[2]];
+            } else if (opcode == 0x97) { // f32.max
+                if (a[2] == 0.0 && b[2] == 0.0) {
+                    res = [F32, 0, 0.0];
+                } else {
+                    res = [F32, 0, (a[2] > b[2]) ? a[2] : b[2]];
+                }
+            } else if (opcode == 0x98) { // f32.copysign
+                res = [F32, 0, (b[2] > 0) ? Math.abs(a[2]) : -Math.abs(a[2])];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
 
-//         # f32 binary operations
-//         elif 0x92 <= opcode <= 0x98:
-//             a, b = stack[sp-1], stack[sp]
-//             sp -= 2
-//             if VALIDATE: assert a[0] == F32 and b[0] == F32
-//             if   0x92 == opcode: # f32.add
-//                 res = (F32, 0, a[2] + b[2])
-//             elif 0x93 == opcode: # f32.sub
-//                 res = (F32, 0, a[2] - b[2])
-//             elif 0x94 == opcode: # f32.mul
-//                 res = (F32, 0, a[2] * b[2])
-//             elif 0x95 == opcode: # f32.div
-//                 res = (F32, 0, a[2] / b[2])
-//             elif 0x96 == opcode: # f32.min
-//                 if a[2] < b[2]:
-//                     res = (F32, 0, a[2])
-//                 else:
-//                     res = (F32, 0, b[2])
-//             elif 0x97 == opcode: # f32.max
-//                 if a[2] == b[2] == 0.0:
-//                     res = (F32, 0, 0.0)
-//                 elif a[2] > b[2]:
-//                     res = (F32, 0, a[2])
-//                 else:
-//                     res = (F32, 0, b[2])
-//             elif 0x98 == opcode: # f32.copysign
-//                 if b[2] > 0:
-//                     res = (F32, 0, abs(a[2]))
-//                 else:
-//                     res = (F32, 0, -abs(a[2]))
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s, %s) = %s" % (
-//                     value_repr(a), value_repr(b), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
+        // f64 binary operations
+        else if (0xa0 <= opcode && opcode <= 0xa6) {
+            var a = stack[sp-1];
+            var b = stack[sp];
+            sp -= 2;
+            if (VALIDATE) { assert(a[0] == F64 && b[0] == F64, null); }
+            var res;
+            if (opcode == 0xa0) { // f64.add
+                res = [F64, 0, a[2] + b[2]];
+            } else if (opcode == 0xa1) { // f64.sub
+                res = [F64, 0, a[2] - b[2]];
+            } else if (opcode == 0xa2) { // f64.mul
+                res = [F64, 0, a[2] * b[2]];
+            } else if (opcode == 0xa3) { // f64.div
+                if (b[2] == 0.0) {
+                    var aneg = (a[2].toString().substring(0, 1) == "-");
+                    var bneg = (b[2].toString().substring(0, 1) == "-");
+                    if ((aneg && !bneg) || (!aneg && bneg)) {
+                        res = [F64, 0, createNegativeInfinity()];
+                    } else {
+                        res = [F64, 0, createPositiveInfinity()];
+                    }
+                } else {
+                    res = [F64, 0, a[2] / b[2]];
+                }
+            } else if (opcode == 0xa4) { // f64.min
+                res = [F64, 0, (a[2] < b[2]) ? a[2] : b[2]];
+            } else if (opcode == 0xa5) { // f64.max
+                res = [F64, 0, (a[2] > b[2]) ? a[2] : b[2]];
+            } else if (opcode == 0xa6) { // f64.copysign
+                res = [F64, 0, (b[2] > 0) ? Math.abs(a[2]) : -Math.abs(a[2])];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ", " + value_repr(b) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        }
+        // conversion operations
+        else if (0xa7 <= opcode && opcode <= 0xbb) {
+            var a = stack[sp];
+            sp -= 1;
+            
+            var res;
 
-//         # f64 binary operations
-//         elif 0xa0 <= opcode <= 0xa6:
-//             a, b = stack[sp-1], stack[sp]
-//             sp -= 2
-//             if VALIDATE: assert a[0] == F64 and b[0] == F64
-//             if   0xa0 == opcode: # f64.add
-//                 res = (F64, 0, a[2] + b[2])
-//             elif 0xa1 == opcode: # f64.sub
-//                 res = (F64, 0, a[2] - b[2])
-//             elif 0xa2 == opcode: # f64.mul
-//                 res = (F64, 0, a[2] * b[2])
-//             elif 0xa3 == opcode: # f64.div
-//                 if b[2] == 0.0:
-//                     aneg = str(a[2])[0] == '-'
-//                     bneg = str(b[2])[0] == '-'
-//                     if (aneg and not bneg) or (not aneg and bneg):
-//                         res = (F64, 0, float_fromhex('-inf'))
-//                     else:
-//                         res = (F64, 0, float_fromhex('inf'))
-//                 else:
-//                     res = (F64, 0, a[2] / b[2])
-//             elif 0xa4 == opcode: # f64.min
-//                 if a[2] < b[2]:
-//                     res = (F64, 0, a[2])
-// # Adding the 0.0 checks causes this error during compilation:
-// #   File "/opt/pypy/rpython/jit/codewriter/assembler.py", line 230, in check_result
-// #       assert self.count_regs['int'] + len(self.constants_i) <= 256
+            // conversion operations
+            if (0xa7 == opcode) { // i32.wrap_i64
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [I32, int2int32(a[1]), 0.0];
+            } else if (0xa8 == opcode) { // i32.trunc_f32_s
+                if (VALIDATE) { assert(a[0] == F32, null); }
+                if (isNaN(a[2])) {
+                    throw new WAException("invalid conversion to integer");
+                } else if (a[2] > 2147483647.0) {
+                    throw new WAException("integer overflow");
+                } else if (a[2] < -2147483648.0) {
+                    throw new WAException("integer overflow");
+                }
+                res = [I32, a[2].toNumber(), 0.0];
+            } else if (0xac == opcode) { // i64.extend_i32_s
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [I64, int2int32(a[1]), 0.0];
+            } else if (0xad == opcode) { // i64.extend_i32_u
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [I64, intmask(a[1]), 0.0];
+            } else if (0xb0 == opcode) { // i64.trunc_f64_s
+                if (VALIDATE) { assert(a[0] == F64, null); }
+                if (isNaN(a[2])) {
+                    throw new WAException("invalid conversion to integer");
+                }
+                res = [I64, a[2].toNumber(), 0.0];
+            } else if (0xb1 == opcode) { // i64.trunc_f64_u
+                if (VALIDATE) { assert(a[0] == F64, null); }
+                if (isNaN(a[2])) {
+                    throw new WAException("invalid conversion to integer");
+                } else if (a[2] <= -1.0) {
+                    throw new WAException("integer overflow");
+                }
+                res = [I64, a[2].toNumber(), 0.0];
+            } else if (0xb2 == opcode) { // f32.convert_i32_s
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [F32, 0, a[1].toFloat()];
+            } else if (0xb3 == opcode) { // f32.convert_i32_u
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [F32, 0, int2uint32(a[1]).toFloat()];
+            } else if (0xb4 == opcode) { // f32.convert_i64_s
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F32, 0, a[1].toFloat()];
+            } else if (0xb5 == opcode) { // f32.convert_i64_u
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F32, 0, int2uint64(a[1]).toFloat()];
+            } else if (0xb7 == opcode) { // f64.convert_i32_s
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [F64, 0, a[1].toDouble()];
+            } else if (0xb8 == opcode) { // f64.convert_i32_u
+                if (VALIDATE) { assert(a[0] == I32, null); }
+                res = [F64, 0, int2uint32(a[1]).toDouble()];
+            } else if (0xb9 == opcode) { // f64.convert_i64_s
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F64, 0, a[1].toDouble()];
+            } else if (0xba == opcode) { // f64.convert_i64_u
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F64, 0, int2uint64(a[1]).toDouble()];
+            } else if (0xbb == opcode) { // f64.promote_f32
+                if (VALIDATE) { assert(a[0] == F32, null); }
+                res = [F64, 0, a[2]];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        // reinterpretations
+        } else if (0xbc <= opcode && opcode <= 0xbf) {
+            var a = stack[sp];
+            sp -= 1;
 
-// #                elif b[2] == 0.0:
-// #                    if str(a[2])[0] == '-':
-// #                        res = (F64, 0, a[2])
-// #                    else:
-// #                        res = (F64, 0, b[2])
-//                 else:
-//                     res = (F64, 0, b[2])
-//             elif 0xa5 == opcode: # f64.max
-//                 if a[2] > b[2]:
-//                     res = (F64, 0, a[2])
-// #                elif b[2] == 0.0:
-// #                    if str(a[2])[0] == '-':
-// #                        res = (F64, 0, b[2])
-// #                    else:
-// #                        res = (F64, 0, a[2])
-//                 else:
-//                     res = (F64, 0, b[2])
-//             elif 0xa6 == opcode: # f64.copysign
-//                 if b[2] > 0:
-//                     res = (F64, 0, abs(a[2]))
-//                 else:
-//                     res = (F64, 0, -abs(a[2]))
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s, %s) = %s" % (
-//                     value_repr(a), value_repr(b), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
-
-//         ## conversion operations
-//         elif 0xa7 <= opcode <= 0xbb:
-//             a = stack[sp]
-//             sp -= 1
-
-//             # conversion operations
-//             if   0xa7 == opcode: # i32.wrap_i64
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (I32, int2int32(a[1]), 0.0)
-//             elif 0xa8 == opcode: # i32.trunc_f32_s
-//                 if VALIDATE: assert a[0] == F32
-//                 if math.isnan(a[2]):
-//                     raise WAException("invalid conversion to integer")
-//                 elif a[2] > 2147483647.0:
-//                     raise WAException("integer overflow")
-//                 elif a[2] < -2147483648.0:
-//                     raise WAException("integer overflow")
-//                 res = (I32, int(a[2]), 0.0)
-// #            elif 0xa9 == opcode: # i32.trunc_f32_u
-// #                if VALIDATE: assert a[0] == F32
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 4294967295.0:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] <= -1.0:
-// #                    raise WAException("integer overflow")
-// #                res = (I32, int(a[2]), 0.0)
-// #            elif 0xaa == opcode: # i32.trunc_f64_s
-// #                if VALIDATE: assert a[0] == F64
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**31-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] < -2**31:
-// #                    raise WAException("integer overflow")
-// #                res = (I32, int(a[2]), 0.0)
-// #            elif 0xab == opcode: # i32.trunc_f64_u
-// #                if VALIDATE: assert a[0] == F64
-// #                debug("*** a[2]: %s" % a[2])
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**32-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] <= -1.0:
-// #                    raise WAException("integer overflow")
-// #                res = (I32, int(a[2]), 0.0)
-//             elif 0xac == opcode: # i64.extend_i32_s
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (I64, int2int32(a[1]), 0.0)
-//             elif 0xad == opcode: # i64.extend_i32_u
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (I64, intmask(a[1]), 0.0)
-// #            elif 0xae == opcode: # i64.trunc_f32_s
-// #                if VALIDATE: assert a[0] == F32
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**63-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] < -2**63:
-// #                    raise WAException("integer overflow")
-// #                res = (I64, int(a[2]), 0.0)
-// #            elif 0xaf == opcode: # i64.trunc_f32_u
-// #                if VALIDATE: assert a[0] == F32
-// #                if math.isnan(a[2]):
-// #                    raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**63-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] <= -1.0:
-// #                    raise WAException("integer overflow")
-// #                res = (I64, int(a[2]), 0.0)
-//             elif 0xb0 == opcode: # i64.trunc_f64_s
-//                 if VALIDATE: assert a[0] == F64
-//                 if math.isnan(a[2]):
-//                     raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**63-1:
-// #                    raise WAException("integer overflow")
-// #                elif a[2] < -2**63:
-// #                    raise WAException("integer overflow")
-//                 res = (I64, int(a[2]), 0.0)
-//             elif 0xb1 == opcode: # i64.trunc_f64_u
-//                 if VALIDATE: assert a[0] == F64
-//                 if math.isnan(a[2]):
-//                     raise WAException("invalid conversion to integer")
-// #                elif a[2] > 2**63-1:
-// #                    raise WAException("integer overflow")
-//                 elif a[2] <= -1.0:
-//                     raise WAException("integer overflow")
-//                 res = (I64, int(a[2]), 0.0)
-//             elif 0xb2 == opcode: # f32.convert_i32_s
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (F32, 0, float(a[1]))
-//             elif 0xb3 == opcode: # f32.convert_i32_u
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (F32, 0, float(int2uint32(a[1])))
-//             elif 0xb4 == opcode: # f32.convert_i64_s
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F32, 0, float(a[1]))
-//             elif 0xb5 == opcode: # f32.convert_i64_u
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F32, 0, float(int2uint64(a[1])))
-// #            elif 0xb6 == opcode: # f32.demote_f64
-// #                if VALIDATE: assert a[0] == F64
-// #                res = (F32, 0, unpack_f32(pack_f32(a[2])))
-//             elif 0xb7 == opcode: # f64.convert_i32_s
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (F64, 0, float(a[1]))
-//             elif 0xb8 == opcode: # f64.convert_i32_u
-//                 if VALIDATE: assert a[0] == I32
-//                 res = (F64, 0, float(int2uint32(a[1])))
-//             elif 0xb9 == opcode: # f64.convert_i64_s
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F64, 0, float(a[1]))
-//             elif 0xba == opcode: # f64.convert_i64_u
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F64, 0, float(int2uint64(a[1])))
-//             elif 0xbb == opcode: # f64.promote_f32
-//                 if VALIDATE: assert a[0] == F32
-//                 res = (F64, 0, a[2])
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s) = %s" % (
-//                     value_repr(a), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
-
-//         ## reinterpretations
-//         elif 0xbc <= opcode <= 0xbf:
-//             a = stack[sp]
-//             sp -= 1
-
-//             if   0xbc == opcode: # i32.reinterpret_f32
-//                 if VALIDATE: assert a[0] == F32
-//                 res = (I32, intmask(pack_f32(a[2])), 0.0)
-//             elif 0xbd == opcode: # i64.reinterpret_f64
-//                 if VALIDATE: assert a[0] == F64
-//                 res = (I64, intmask(pack_f64(a[2])), 0.0)
-// #            elif 0xbe == opcode: # f32.reinterpret_i32
-// #                if VALIDATE: assert a[0] == I32
-// #                res = (F32, 0, unpack_f32(int2int32(a[1])))
-//             elif 0xbf == opcode: # f64.reinterpret_i64
-//                 if VALIDATE: assert a[0] == I64
-//                 res = (F64, 0, unpack_f64(int2int64(a[1])))
-//             else:
-//                 raise WAException("%s(0x%x) unimplemented" % (
-//                     OPERATOR_INFO[opcode][0], opcode))
-//             if TRACE:
-//                 debug("      - (%s) = %s" % (
-//                     value_repr(a), value_repr(res)))
-//             sp += 1
-//             stack[sp] = res
-        else {
+            var res;
+            if (0xbc == opcode) { // i32.reinterpret_f32
+                if (VALIDATE) { assert(a[0] == F32, null); }
+                res = [I32, intmask(pack_f32(a[2])), 0.0];
+            } else if (0xbd == opcode) { // i64.reinterpret_f64
+                if (VALIDATE) { assert(a[0] == F64, null); }
+                res = [I64, intmask(pack_f64(a[2])), 0.0];
+            // } else if (0xbe == opcode) { // f32.reinterpret_i32
+            //     if (VALIDATE) { assert(a[0] == I32, null); }
+            //     res = [F32, 0, unpack_f32(int2int32(a[1]))];
+            } else if (0xbf == opcode) { // f64.reinterpret_i64
+                if (VALIDATE) { assert(a[0] == I64, null); }
+                res = [F64, 0, unpack_f64(int2int64(a[1]))];
+            } else {
+                throw new WAException(OPERATOR_INFO[opcode][0] + "(0x" + opcode.format("%x") + ") unimplemented");
+            }
+            if (TRACE) {
+                debug("      - (" + value_repr(a) + ") = " + value_repr(res));
+            }
+            sp += 1;
+            stack[sp] = res;
+        } else {
             throw new WAException("unrecognized opcode 0x" + opcode.format("%02x") + " (" + OPERATOR_INFO[opcode][0] + ")");
         }
     }
@@ -2511,7 +2814,7 @@ class Module {
     var importFunction as ImportFunctionType;
 
     // Sections
-    private var type as Array<Type>;
+    var type as Array<Type>;
     private var import_list as Array<Import>;
     var function_ as Array<Function>;
     // private var fnImportCnt as Number;
@@ -2613,7 +2916,7 @@ class Module {
     }
 
     public function dump() as Void {
-        debug("module bytes: " + byteCodeRepr(self.rdr.bytes));
+        // debug("module bytes: " + byteCodeRepr(self.rdr.bytes));
         info("");
 
         info("Types:");
@@ -2622,6 +2925,7 @@ class Module {
         }
 
         info("Imports:");
+        // these havn't been added
         for (var i = 0; i < self.import_list.size(); i++) {
             var imp = self.import_list[i];
             if (imp.kind == 0x0) {  // Function
@@ -2648,7 +2952,7 @@ class Module {
                 var entries = self.table[key];
                 var entryStrings = [];
                 for (var j = 0; j < entries.size(); j++) {
-                    entryStrings.add(entries[j].format("%x"));
+                    entryStrings.add("0x" + entries[j].format("%x"));
                 }
                 info("  0x" + key.format("%x") + " -> [" + join(entryStrings, ",") + "]");
             }
@@ -2685,7 +2989,7 @@ class Module {
         for (var i = 0; i < blockKeys.size(); i++) {
             var k = blockKeys[i];
             var bl = self.block_map[k];
-            blockMapStrings.add("'" + blockRepr(bl) + "' [0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]'");
+            blockMapStrings.add("'" + blockRepr(bl) + "[0x" + bl.start.format("%x") + "->0x" + bl.end.format("%x") + "]'");
         }
         info("block_map: [" + join(blockMapStrings, ", ") + "]");
         info("");
@@ -2696,6 +3000,7 @@ class Module {
     }        
 
     public function interpret() as Void {
+        info("interpret: pc: 0x" + self.rdr.pos.format("%x"));
         var result = interpret_mvp(self,
             // Greens
             self.rdr.pos, self.rdr.bytes, self.function_,

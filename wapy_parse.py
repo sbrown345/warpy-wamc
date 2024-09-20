@@ -2490,7 +2490,8 @@ def import_value(module, field):
     if iname in IMPORT_VALUES:
         return IMPORT_VALUES[iname]
     else:
-        raise Exception("global import %s not found" % (iname))
+        print("global import %s not found" % (iname))
+        return (I32, 377, 0.0)
 
 def spectest_print(mem, args):
     if len(args) == 0: return []

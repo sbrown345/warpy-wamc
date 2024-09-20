@@ -3,3 +3,7 @@ test/*.wasm
 warpy-nojit
 warpy-jit
 build
+rocket.mc
+rocket.wasm
+*.log
+*.temp
