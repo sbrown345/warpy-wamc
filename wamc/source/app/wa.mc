@@ -10,12 +10,12 @@ typedef CallStackType as Array<Array<Number or Block or Function>>;
 typedef Global as ValueTupleType;
 typedef ValueTupleType as [Types, Number, Float];
 
-// var INFO  = false; // informational logging
-// var TRACE = false; // trace instructions/stacks
-// var DEBUG = false; // verbose logging
-var INFO  = true;
-var TRACE = true;
-var DEBUG = true;
+var INFO  = false; // informational logging
+var TRACE = false; // trace instructions/stacks
+var DEBUG = false; // verbose logging
+// var INFO  = true;
+// var TRACE = true;
+// var DEBUG = true;
 var VALIDATE = true;
 
 function createNaN() as Float {
@@ -1606,9 +1606,9 @@ function interpret_mvp(module_,
     var operation_count = 0;
 
     while (pc < code.size()) {
-        if (operation_count > 1000) {
-            throw new WAException("max operation_count");
-        }
+        // if (operation_count > 10000) {
+        //     throw new WAException("max operation_count");
+        // }
 
         if (module_.maxAsyncOperations != -1 && operation_count > module_.maxAsyncOperations) {
             return [pc, sp, fp, csp];
@@ -1898,7 +1898,7 @@ function interpret_mvp(module_,
             }
             var addr = addr_val[1] + offset[1];
             if (bound_violation(opcode, addr, memory.pages)) {
-                throw new WAException("out of bounds memory access");
+                throw new WAException("out of bounds memory access: address " + addr + " exceeds memory size " + (memory.pages * (1 << 16)) + " bytes (pages: " + memory.pages + ")");
             }
             assert(addr >= 0, null);
             var res;

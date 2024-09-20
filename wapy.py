@@ -959,8 +959,8 @@ def interpret_mvp(module,
 
         operation_count += 1
 
-        if operation_count > 1000:
-            exit(0)
+        # if operation_count > 10000:
+        #     exit(0)
 
         if TRACE:
             info("operation_count: %d" % operation_count)
@@ -1476,9 +1476,7 @@ def interpret_mvp(module,
                 val = a[1]
                 while count < 32 and (val % 2) == 0:
                     count += 1
-                    val = val / 2
-                    if not isinstance(val, int):
-                        raise WAException("i32.ctz operation resulted in a non-integer valueuse `val = val // 2` ????")
+                    val = val // 2
                 res = (I32, count, 0.0)
             elif 0x69 == opcode: # i32.popcnt
                 if VALIDATE: assert a[0] == I32
@@ -1487,9 +1485,7 @@ def interpret_mvp(module,
                 for i in range(32):
                     if 0x1 & val:
                         count += 1
-                    val = val / 2
-                    if not isinstance(val, int):
-                        raise WAException("i32.ctz operation resulted in a non-integer value.   use `val = val // 2` ????")
+                    val = val // 2
                 res = (I32, count, 0.0)
             elif 0x79 == opcode: # i64.clz
                 if VALIDATE: assert a[0] == I64
@@ -1508,7 +1504,7 @@ def interpret_mvp(module,
                 val = a[1]
                 while count < 64 and (val % 2) == 0:
                     count += 1
-                    val = val / 2
+                    val = val // 2
                 res = (I64, count, 0.0)
             elif 0x7b == opcode: # i64.popcnt
                 if VALIDATE: assert a[0] == I64
@@ -1517,7 +1513,7 @@ def interpret_mvp(module,
                 for i in range(64):
                     if 0x1 & val:
                         count += 1
-                    val = val / 2
+                    val = val // 2
                 res = (I64, count, 0.0)
             elif 0x8b == opcode: # f32.abs
                 if VALIDATE: assert a[0] == F32
