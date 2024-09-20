@@ -25,17 +25,17 @@ https://github.com/diekmann/wasm-fizzbuzz/blob/main/doom/main.js
 
 
 
-compiler.json : 16 MiB:
+compiler.json : 64 MiB:
 ```json
         {
-            "memoryLimit": 16777216,
+            "memoryLimit": 67108864,
             "type": "watchApp"
         },
 ```
 
 simulator.json
 ```json
-    "watchdogCount": 2147483647,
+    "watchdogCount": 240000000,
 ```
 
 
