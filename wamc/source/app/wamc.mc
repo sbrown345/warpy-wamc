@@ -1,5 +1,7 @@
+import Toybox.Application;
 import Toybox.Lang;
 import Toybox.Math;
+import Toybox.StringUtil;
 import Toybox.System;
 import Toybox.Timer;
 
@@ -10,13 +12,31 @@ typedef CallStackType as Array<Array<Number or Block or Function>>;
 typedef Global as ValueTupleType;
 typedef ValueTupleType as [Types, Number, Float];
 
-var INFO  = false; // informational logging
-var TRACE = false; // trace instructions/stacks
-var DEBUG = false; // verbose logging
-// var INFO  = true;
-// var TRACE = true;
-// var DEBUG = true;
+// var INFO  = false; // informational logging
+// var TRACE = false; // trace instructions/stacks
+// var DEBUG = false; // verbose logging
+var INFO  = true;
+var TRACE = true;
+var DEBUG = true;
 var VALIDATE = true;
+
+function loadBytes(resources as Array<ResourceId>) as ByteArray {
+    System.println("loadBytes: " + resources.size());
+    var bytes = new[0]b;
+    for (var i = 0; i < resources.size(); i++) {
+        var base64 = Application.loadResource(resources[i]);
+        var newBytes = StringUtil.convertEncodedString(base64, {
+            :fromRepresentation=>StringUtil.REPRESENTATION_STRING_BASE64,
+            :toRepresentation=>StringUtil.REPRESENTATION_BYTE_ARRAY
+        });
+        // System.println(i + "newBytes:" + bytes.size());
+        // System.println("+bytes:" + bytes.size());
+        bytes.addAll(newBytes);
+        // System.println(bytes.size());
+    }
+    System.println("loaded bytes: " + bytes.size());
+    return bytes;
+}
 
 function createNaN() as Float {
     var bytes = [0x00, 0x00, 0xC0, 0x7F]b;
@@ -321,6 +341,18 @@ class ExitException extends Lang.Exception {
 
 
 
+function arrayToString(arr as Array<Number>, valueTypeMap as Dictionary<Number, String>) as String {
+    var result = "[";
+    for (var i = 0; i < arr.size(); i++) {
+        if (i > 0) {
+            result += ", ";
+        }
+        result += valueTypeMap[arr[i]];
+    }
+    result += "]";
+    return result;
+}
+
 class Type {
     public var index as Number;
     public var form as Number;
@@ -333,11 +365,17 @@ class Type {
         self.form = form;
         self.params = params;
         self.results = results;
-        self.mask = mask == null ? 0x80 : mask; // default was 0x80 but it wanted to parse the mask
+        self.mask = mask == null ? 0x80 : mask;
     }
 
     function toString() as String {
-        return "Type(index: " + self.index + ", form: " + self.form + ", params: " + self.params + ", results: " + self.results + ", mask: " + self.mask + ")";
+        return Lang.format("Type(index: $1$, form: $2$, params: $3$, results: $4$, mask: $5$)", [
+            self.index,
+            self.form,
+            arrayToString(self.params, VALUE_TYPE),
+            arrayToString(self.results, VALUE_TYPE),
+            self.mask
+        ]);
     }
 }
 
@@ -2821,7 +2859,7 @@ class Module {
     private var table as Dictionary<Number, Array<Number>>;
     private var exportList as Array<Export>;
     private var exportMap as Dictionary<String, Export>;
-    private var globalList as Array<Global>;
+    var globalList as Array<Global>;
 
     public var memory as Memory;
 
@@ -3191,7 +3229,7 @@ class Module {
         // Check arg type
         var tparams = self.function_[fidx].type.params;
         if (tparams.size() != args.size()) {
-            throw new WAException("arg count mismatch " + tparams.size() + " != " + args.size());
+            throw new WAException("arg count mismatch " + tparams.size() + " != " + args.size() + " for type " + self.function_[fidx].type + " on idx " + fidx);
         }
         for (var idx = 0; idx < args.size(); idx++) {
             if (tparams[idx] != args[idx][0]) {

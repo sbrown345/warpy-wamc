@@ -13,7 +13,7 @@ class wamcDelegate extends WatchUi.BehaviorDelegate {
     }
     
     function onSelect() as Boolean {
-        getApp().fizzbuzz(method(:onFizzbuzzComplete));
+        getApp().doom();
         return true;
     }
 

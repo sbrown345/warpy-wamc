@@ -2594,6 +2594,8 @@ def sanitize_class_name(name):
     # Capitalize the first letter
     return name[0].upper() + name[1:]
 
+import base64
+
 def generate_monkeyc_classes(module, class_name):
     output = "import Toybox.Lang;\n"
     output += "import Toybox.System;\n"
@@ -2603,10 +2605,22 @@ def generate_monkeyc_classes(module, class_name):
     output += "    static function createModule() {\n"
     output += "        var module_ = new Module(\n"
 
-    # Add WASM bytecode as bytearray
+    # Generate XML resource file
+    xml_output = "<strings>\n"
+    xml_output += "    <!-- WASM bytecode -->\n"
+
+    # Add WASM bytecode as base64 chunks
+    CHUNK_SIZE = 22 * 1024  # 32KB
+    chunk_index = 0
+    for i in range(0, len(module.data), CHUNK_SIZE):
+        chunk = module.data[i:i + CHUNK_SIZE]
+        xml_output += f'    <string id="bytecode_{chunk_index}">{base64.b64encode(chunk).decode()}</string>\n'
+        chunk_index += 1
+
+    # Update MonkeyC code to load bytecode
     output += "            // WASM bytecode\n"
-    wasm_bytes = ", ".join([f"0x{byte:02x}" for byte in module.data])
-    output += f"            [{wasm_bytes}]b,\n"
+    output += f"            loadBytes([{', '.join([f'Rez.Strings.bytecode_{i}' for i in range(chunk_index)])}]),\n"
+
 
     output += f"            new Method($, :{class_name}_import_function), // hardcoded function for now\n"
 
@@ -2676,11 +2690,22 @@ def generate_monkeyc_classes(module, class_name):
     # Close the Module constructor
     output += "        );\n"
 
-    # Add data sections
+    # Add data sections to XML and update MonkeyC code
+    xml_output += "    <!-- Data sections -->\n"
     output += "\n        // Data sections\n"
     for i, (offset, data) in enumerate(module.data_sections):
-        data_bytes = ", ".join([f"0x{byte:02x}" for byte in data])
-        output += f"        module_.memory.write({offset}, [{data_bytes}]b);\n"
+        chunk_index = 0
+        for j in range(0, len(data), CHUNK_SIZE):
+            chunk = data[j:j + CHUNK_SIZE]
+            # Convert the chunk to bytes before encoding
+            chunk_bytes = bytes(chunk)
+            xml_output += f'    <string id="data_{i}_{chunk_index}">{base64.b64encode(chunk_bytes).decode()}</string>\n'
+            chunk_index += 1
+        
+        output += f"        module_.memory.write({offset}, loadBytes([{', '.join([f'Rez.Strings.data_{i}_{k}' for k in range(chunk_index)])}]));\n"
+
+    # Close XML resource file
+    xml_output += "</strings>\n"
 
     # Set start function if exists
     if module.start_function >= 0:
@@ -2690,26 +2715,20 @@ def generate_monkeyc_classes(module, class_name):
     output += "        module_.dump();\n"
     output += "        return module_;\n"
     output += "    }\n"
+
+    # # Add loadBytes function
+    # output += "\n"
+    # output += "    static function loadBytes(stringIds as Array<String>) as ByteArray {\n"
+    # output += "        var result = []b;\n"
+    # output += "        for (var i = 0; i < stringIds.size(); i++) {\n"
+    # output += "            result.addAll(Storage.getValue(stringIds[i]) as ByteArray);\n"
+    # output += "        }\n"
+    # output += "        return result;\n"
+    # output += "    }\n"
+
     output += "}\n"
 
-    # Commented out function for easy copying and pasting
-    output += "\n"
-    output += "/*\n"
-    output += f'function {class_name}_import_function(module_ as Module, field as String, mem as Memory, args as ValueTupleType) as ValueTupleType {{\n'
-    output += "    var fname = module_ + \".\" + field;\n"
-    output += "    \n"
-    for f in module.function:
-        if isinstance(f, FunctionImport):
-            output += f"    if (fname.equals(\"{f.module}.{f.field}\")) {{\n"
-            output += f"        return {f.module}_{f.field}(mem, args);\n"
-            output += "    } else "
-    output += "{\n"
-    output += "        throw new WAException(\"function import \" + fname + \" not found\");\n"
-    output += "    }\n"
-    output += "}\n"
-    output += "*/\n"
-
-    return output
+    return output, xml_output
 
 def generate_monkeyc(wasm_file_path, class_name=None):
     with open(wasm_file_path, 'rb') as file:
@@ -2720,9 +2739,9 @@ def generate_monkeyc(wasm_file_path, class_name=None):
     m = Module(wasm, import_value, import_function, mem)
     class_name = class_name or sanitize_class_name(wasm_file_path)
 
-    monkeyc_code = generate_monkeyc_classes(m, class_name)
+    monkeyc_code, xml_resource = generate_monkeyc_classes(m, class_name)
 
-    return monkeyc_code
+    return monkeyc_code, xml_resource
 
 def entry_point(argv):
     try:
@@ -2793,17 +2812,28 @@ def entry_point(argv):
         class_name = sanitize_class_name(input_file)
 
         if generate_monkeyc:
-            monkeyc_code = generate_monkeyc_classes(m, class_name)
+            monkeyc_code, xml_resource = generate_monkeyc_classes(m, class_name)
             
-            # Generate output filename
+            # Generate output filenames
             if output_file is None:  # Use default if not specified
                 output_file = os.path.splitext(input_file)[0] + ".mc"
+            
+            # TODO: ../../ will only work for one circumstance!!!
+            xml_file = os.path.join(os.path.dirname(output_file), f"../../resources/strings/data_{class_name}.xml")
+            
+            # Create directories if they don't exist
+            os.makedirs(os.path.dirname(xml_file), exist_ok=True)
             
             # Write the generated code to the output file
             with open(output_file, 'w') as file:
                 file.write(monkeyc_code)
             
+            # Write the XML resource file
+            with open(xml_file, 'w') as file:
+                file.write(xml_resource)
+            
             print(f"MonkeyC code generated and saved to {output_file}")
+            print(f"XML resource file generated and saved to {xml_file}")
 
         # if argv_mode:
         #     fname = "_main"

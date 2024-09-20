@@ -11,8 +11,10 @@
             "program": "${file}",
             "console": "integratedTerminal",
             // "args": "test/addTwo.wasm addTwo 1 2"
-            "args": "wamc/test/fizzbuzz.wasm",
+            // "args": "wamc/test/fizzbuzz.wasm",
             // "args": "wamc/test/fizzbuzz.wasm --generate-monkeyc"
+            "args": "wamc/test/doom/doom.wasm --memory-pages 108"
+            // "args": "wamc/test/doom/doom.wasm --generate-monkeyc --memory-pages 108"
         }
     ]
 }

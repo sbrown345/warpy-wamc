@@ -390,6 +390,13 @@ OPERATOR_INFO = {
         0xbd : ['i64.reinterpret_f64', ''],
         0xbe : ['f32.reinterpret_i32', ''],
         0xbf : ['f64.reinterpret_i64', ''],
+
+        # Extend operations
+        0xc0 : ['i32.extend8_s',       ''],
+        0xc1 : ['i32.extend16_s',      ''],
+        0xc2 : ['i64.extend8_s',       ''],
+        0xc3 : ['i64.extend16_s',      ''],
+        0xc4 : ['i64.extend32_s',      ''],
         }
 
 LOAD_SIZE = { 0x28 : 4,
@@ -729,6 +736,8 @@ def skip_immediates(code, pos):
     opcode = code[pos]
     pos += 1
     vals = []
+    if opcode not in OPERATOR_INFO:
+        raise Exception(f"Unknown opcode: 0x{opcode:02x}")
     imtype = OPERATOR_INFO[opcode][1]
     if   'varuint1' == imtype:
         pos, v = read_LEB(code, pos, 1)
@@ -1798,6 +1807,38 @@ def interpret_mvp(module,
             if TRACE:
                 debug("      - (%s, %s) = %s" % (
                     value_repr(a), value_repr(b), value_repr(res)))
+            sp += 1
+            stack[sp] = res
+            
+        # extend operations
+        elif 0xc0 <= opcode <= 0xc4:
+            a = stack[sp]
+            sp -= 1
+            if 0xc0 == opcode: # i32.extend8_s
+                if VALIDATE: assert a[0] == I32
+                byte = a[1] & 0xFF
+                res = (I32, (byte | 0xFFFFFF00) if byte & 0x80 else byte, 0.0)
+            elif 0xc1 == opcode: # i32.extend16_s
+                if VALIDATE: assert a[0] == I32
+                half = a[1] & 0xFFFF
+                res = (I32, (half | 0xFFFF0000) if half & 0x8000 else half, 0.0)
+            elif 0xc2 == opcode: # i64.extend8_s
+                if VALIDATE: assert a[0] == I64
+                byte = a[1] & 0xFF
+                res = (I64, (byte | 0xFFFFFFFFFFFFFF00) if byte & 0x80 else byte, 0.0)
+            elif 0xc3 == opcode: # i64.extend16_s
+                if VALIDATE: assert a[0] == I64
+                half = a[1] & 0xFFFF
+                res = (I64, (half | 0xFFFFFFFFFFFF0000) if half & 0x8000 else half, 0.0)
+            elif 0xc4 == opcode: # i64.extend32_s
+                if VALIDATE: assert a[0] == I64
+                word = a[1] & 0xFFFFFFFF
+                res = (I64, (word | 0xFFFFFFFF00000000) if word & 0x80000000 else word, 0.0)
+            else:
+                raise WAException("%s(0x%x) unimplemented" % (
+                    OPERATOR_INFO[opcode][0], opcode))
+            if TRACE:
+                debug("      - (%s) = %s" % (value_repr(a), value_repr(res)))
             sp += 1
             stack[sp] = res
 

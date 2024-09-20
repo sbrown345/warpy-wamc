@@ -15,8 +15,8 @@ class wamcApp extends Application.AppBase {
 
     function initialize() {
         AppBase.initialize();
-        waModule = Wamc_test_addTwo.createModule();
-        fizzbuzzModule = Wamc_test_fizzbuzz.createModule();
+        // waModule = Wamc_test_addTwo.createModule();
+        // fizzbuzzModule = Wamc_test_fizzbuzz.createModule();
         terminal = new Terminal(10, Graphics.FONT_XTINY);
         interpretStep = new Timer.Timer();
     }
@@ -33,6 +33,30 @@ class wamcApp extends Application.AppBase {
     function getInitialView() as [Views] or [Views, InputDelegates] {
         return [ new wamcView(), new wamcDelegate() ];
     }
+
+
+
+
+    // https://github.com/diekmann/wasm-fizzbuzz/blob/main/doom/main.js
+    function doom() as ValueTupleType {
+        System.println("stas:" + System.getSystemStats());
+        var m = Wamc_test_doom_doom.createModule();
+        var run_args = [];
+        // var result = m.runStartFunction();
+        // System.println("start result = " + result);
+
+        var result = m.run("main", [i32(0), i32(0)]);
+        System.println("main result = " + result);
+
+        return result;
+    }
+
+
+
+
+
+
+
 
     // add
     function add(a as Number, b as Number) as ValueTupleType {
